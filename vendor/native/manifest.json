@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "deepseek": {
+      "url": "https://github.com/deepseek-ai/deepseek-harness",
+      "revision": "477b4f420553e8a52c2fbccc464d7561b239c443",
+      "interface": "SDK stdio"
+    }
+  },
+  "artifacts": [
+    {
+      "path": "licenses/DeepSeek-LICENSE",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+      "bytes": 1065,
+      "executable": false
+    },
+    {
+      "path": "licenses/DeepSeek-DEPENDENCIES.txt",
+      "sha256": "1f61be0193b94dd690c42e101881a71f30b7c5c7446db40f9729a3ac270df09e",
+      "bytes": 33193,
+      "executable": false
+    },
+    {
+      "path": "node/provenance.json",
+      "sha256": "772decbb99a4ecdfe8e9d50c84fe68db4c3010363640a397afda19c7fb978ce9",
+      "bytes": 359,
+      "executable": false
+    },
+    {
+      "path": "build/deepseek-dependencies.json",
+      "sha256": "f68a52b25e8060c6c8892c80b8aa5fb3246a4ee0f48bddcd85344b5b8f1a154c",
+      "bytes": 2660,
+      "executable": false
+    },
+    {
+      "path": "deepseek/launch.sh",
+      "sha256": "d5be7af2664f0ad01e3aa117688cb6d11f243832ff4088e912ee3850845bd4e1",
+      "bytes": 257,
+      "executable": true
+    },
+    {
+      "path": "node/arm64/node",
+      "sha256": "27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1",
+      "bytes": 121306800,
+      "executable": true
+    },
+    {
+      "path": "node/x64/node",
+      "sha256": "1052eb9c7d6c60a79b968e09f75af55a73462b0f6dff0964336d63b5e13eb63c",
+      "bytes": 123666640,
+      "executable": true
+    },
+    {
+      "path": "deepseek/runtime.mjs",
+      "sha256": "bb29d80d92dc2d90339a23b7ed2f7491a25f042f85cfa1a3e60f8ad9118fbf94",
+      "bytes": 1191340,
+      "executable": false
+    },
+    {
+      "path": "node/arm64/LICENSE",
+      "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5",
+      "bytes": 157606,
+      "executable": false
+    },
+    {
+      "path": "node/x64/LICENSE",
+      "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5",
+      "bytes": 157606,
+      "executable": false
+    }
+  ],
+  "runtimes": [
+    {
+      "id": "deepseek",
+      "platform": "darwin",
+      "arch": "arm64",
+      "executable": "runtime/assets/native/deepseek/launch.sh",
+      "sha256": "d5be7af2664f0ad01e3aa117688cb6d11f243832ff4088e912ee3850845bd4e1",
+      "artifacts": [
+        {
+          "path": "runtime/assets/native/deepseek/runtime.mjs",
+          "sha256": "bb29d80d92dc2d90339a23b7ed2f7491a25f042f85cfa1a3e60f8ad9118fbf94"
+        },
+        {
+          "path": "runtime/assets/native/node/arm64/node",
+          "sha256": "27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1"
+        },
+        {
+          "path": "runtime/assets/native/node/arm64/LICENSE",
+          "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
+        },
+        {
+          "path": "runtime/assets/native/licenses/DeepSeek-LICENSE",
+          "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be"
+        },
+        {
+          "path": "runtime/assets/native/licenses/DeepSeek-DEPENDENCIES.txt",
+          "sha256": "1f61be0193b94dd690c42e101881a71f30b7c5c7446db40f9729a3ac270df09e"
+        },
+        {
+          "path": "runtime/assets/native/node/provenance.json",
+          "sha256": "772decbb99a4ecdfe8e9d50c84fe68db4c3010363640a397afda19c7fb978ce9"
+        },
+        {
+          "path": "runtime/assets/native/build/deepseek-dependencies.json",
+          "sha256": "f68a52b25e8060c6c8892c80b8aa5fb3246a4ee0f48bddcd85344b5b8f1a154c"
+        }
+      ]
+    },
+    {
+      "id": "deepseek",
+      "platform": "darwin",
+      "arch": "x64",
+      "executable": "runtime/assets/native/deepseek/launch.sh",
+      "sha256": "d5be7af2664f0ad01e3aa117688cb6d11f243832ff4088e912ee3850845bd4e1",
+      "artifacts": [
+        {
+          "path": "runtime/assets/native/deepseek/runtime.mjs",
+          "sha256": "bb29d80d92dc2d90339a23b7ed2f7491a25f042f85cfa1a3e60f8ad9118fbf94"
+        },
+        {
+          "path": "runtime/assets/native/node/x64/node",
+          "sha256": "1052eb9c7d6c60a79b968e09f75af55a73462b0f6dff0964336d63b5e13eb63c"
+        },
+        {
+          "path": "runtime/assets/native/node/x64/LICENSE",
+          "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
+        },
+        {
+          "path": "runtime/assets/native/licenses/DeepSeek-LICENSE",
+          "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be"
+        },
+        {
+          "path": "runtime/assets/native/licenses/DeepSeek-DEPENDENCIES.txt",
+          "sha256": "1f61be0193b94dd690c42e101881a71f30b7c5c7446db40f9729a3ac270df09e"
+        },
+        {
+          "path": "runtime/assets/native/node/provenance.json",
+          "sha256": "772decbb99a4ecdfe8e9d50c84fe68db4c3010363640a397afda19c7fb978ce9"
+        },
+        {
+          "path": "runtime/assets/native/build/deepseek-dependencies.json",
+          "sha256": "f68a52b25e8060c6c8892c80b8aa5fb3246a4ee0f48bddcd85344b5b8f1a154c"
+        }
+      ]
+    }
+  ]
+}

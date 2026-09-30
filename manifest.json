@@ -1,0 +1,17 @@
+{
+  "apiVersion": 5,
+  "id": "assistant",
+  "name": "Assistant",
+  "version": "2.1.0",
+  "description": "Multi-provider agentic AI chat that can answer and act in the app: connect Anthropic, OpenAI, Gemini, DeepSeek, Kimi and local Ollama, orchestrate which model handles what, and reach it over Telegram and WhatsApp. Conducted by you via .valley/assistant.",
+  "author": [
+    "valley"
+  ],
+  "authorUrl": [
+    "https://github.com/valley-app"
+  ],
+  "license": "Apache-2.0",
+  "minAppVersion": "0.1.0",
+  "isDesktopOnly": true,
+  "enabled": true
+}

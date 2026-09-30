@@ -1,0 +1,40 @@
+{
+  "packageKind": "ai-harness",
+  "main": "src/harness.ts",
+  "icon": "air",
+  "settingsSchema": [
+    {
+      "key": "maxTokens",
+      "label": "Maximum output tokens",
+      "description": "Output ceiling used by the suite.",
+      "type": "number",
+      "default": 256,
+      "min": 32,
+      "max": 2048,
+      "step": 32
+    },
+    {
+      "key": "strictJson",
+      "label": "Strict JSON",
+      "description": "Require the structured-output case to contain only JSON.",
+      "type": "boolean",
+      "default": true
+    }
+  ],
+  "execution": {
+    "timeoutMs": 30000,
+    "memoryMb": 64,
+    "maxResponseBytes": 524288,
+    "maxTurns": 4,
+    "maxConcurrency": 3
+  },
+  "retry": {
+    "maxAttempts": 4,
+    "baseDelayMs": 500,
+    "maxDelayMs": 10000
+  },
+  "cache": {
+    "maxAgeDays": 14,
+    "maxSizeMb": 128
+  }
+}

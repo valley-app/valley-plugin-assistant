@@ -1,0 +1,9 @@
+{
+  "apiVersion": 1,
+  "id": "jarvis",
+  "name": "Jarvis",
+  "version": "1.0.0",
+  "description": "Multi-turn agent-behaviour checks using package-owned, read-only simulated tools.",
+  "author": "Valley",
+  "enabled": true
+}

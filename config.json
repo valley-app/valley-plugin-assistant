@@ -1,0 +1,1316 @@
+{
+  "icon": "icon.svg",
+  "main": "runtime/index.js",
+  "uiSlots": {
+    "left_sidebar": "assistant.panel",
+    "right_sidebar": "assistant.sidebar",
+    "main_workspace": "assistant.page"
+  },
+  "slotDefaults": {
+    "left_sidebar": {
+      "order": 30
+    },
+    "right_sidebar": {
+      "order": 20
+    }
+  },
+  "panelCommand": "open",
+  "settingsView": "assistant.settings",
+  "settingsSections": [
+    {
+      "id": "chat",
+      "label": "Chat",
+      "labelKey": "plugin.assistant.section.chat",
+      "icon": "chat",
+      "description": "Conversations, projects, attachments, models, and conversation preferences.",
+      "storage": [
+        ".valley/plugins/data/assistant/chats"
+      ],
+      "descriptionKey": "auto.d39f9be319d6"
+    },
+    {
+      "id": "projects",
+      "label": "Projects",
+      "labelKey": "assistant.project.projects",
+      "icon": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%2020H4a2%202%200%200%201-2-2V6a2%202%200%200%201%202-2h5l2%202h9a2%202%200%200%201%202%202v10a2%202%200%200%201-2%202Z%22%2F%3E%3C%2Fsvg%3E",
+      "description": "Working folders and shared instructions for projects.",
+      "descriptionKey": "assistant.settings.projectsDescription"
+    },
+    {
+      "id": "telegram",
+      "label": "Telegram",
+      "labelKey": "plugin.assistant.section.telegram",
+      "icon": "send",
+      "description": "Talk to the assistant from outside the app over Telegram. Add one connection per bot; each carries its own token, allow-list, instructions, router and commands. The app must be open to handle messages.",
+      "descriptionKey": "auto.5bf6d99b1939"
+    },
+    {
+      "id": "whatsapp",
+      "label": "WhatsApp",
+      "labelKey": "plugin.assistant.section.whatsapp",
+      "icon": "whatsapp",
+      "description": "Talk to the assistant from outside the app over an official WhatsApp Business Platform / Cloud API number — no Twilio, no WhatsApp Web bridge, no managed tunnel. The app must be open to handle messages.",
+      "descriptionKey": "auto.9719ca7e71e4"
+    }
+  ],
+  "drivers": [
+    "notes",
+    "files",
+    "policy"
+  ],
+  "provides": [
+    {
+      "id": "guard.runtime",
+      "kind": "service",
+      "version": "1.0.0"
+    },
+    {
+      "id": "workspace.surface",
+      "kind": "extension",
+      "version": "1.0.0"
+    },
+    {
+      "id": "metadataPanel.segment",
+      "kind": "extension",
+      "version": "1.0.0"
+    },
+    {
+      "id": "search.resultAction",
+      "kind": "extension",
+      "version": "1.0.0"
+    },
+    {
+      "id": "workspace.bookmark",
+      "kind": "service",
+      "version": "1.0.0"
+    }
+  ],
+  "consumes": [
+    {
+      "id": "agent.toolProvider",
+      "kind": "service",
+      "range": "^1.0.0",
+      "optional": true
+    }
+  ],
+  "guardPresets": {
+    "schemaVersion": 1,
+    "defaultPreset": "recommended",
+    "presets": [
+      {
+        "id": "recommended",
+        "label": "Recommended",
+        "version": 1,
+        "description": "Reads are free; file writes, deletes and command runs confirm. Secrets are always blocked.",
+        "entries": {
+          "tools": {
+            "write_file": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            },
+            "delete_file": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            },
+            "write_note": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            },
+            "delete_note": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            },
+            "write_rule": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            },
+            "set_setting": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            },
+            "run_command": {
+              "decision": "confirm",
+              "allowPreApproval": false
+            }
+          }
+        }
+      },
+      {
+        "id": "read-only",
+        "label": "Read-only",
+        "version": 1,
+        "description": "The assistant can read and answer, but never write or run commands.",
+        "entries": {
+          "tools": {
+            "write_file": {
+              "decision": "deny"
+            },
+            "delete_file": {
+              "decision": "deny"
+            },
+            "write_note": {
+              "decision": "deny"
+            },
+            "delete_note": {
+              "decision": "deny"
+            },
+            "write_rule": {
+              "decision": "deny"
+            },
+            "set_setting": {
+              "decision": "deny"
+            },
+            "run_command": {
+              "decision": "deny"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "settingsSchema": {
+    "fields": [
+      {
+        "key": "attachmentFolder",
+        "label": "Attachment folder",
+        "labelKey": "auto.b31da2770f6e",
+        "type": "text",
+        "description": "Where files you attach in a chat are saved in the vault",
+        "descriptionKey": "auto.c4eea020917e",
+        "validate": "vault-folder",
+        "section": "chat",
+        "default": ""
+      }
+    ]
+  },
+  "locales": {
+    "en": "runtime/locales/en.json",
+    "de": "runtime/locales/de.json",
+    "es": "runtime/locales/es.json",
+    "fr": "runtime/locales/fr.json",
+    "zh-CN": "runtime/locales/zh-CN.json"
+  },
+  "runtime": {
+    "ui": "runtime/index.js",
+    "backend": "runtime/backend.js",
+    "services": [
+      {
+        "id": "valley.text-embeddings",
+        "version": "1.0.0",
+        "method": "embeddings.compute",
+        "request": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "texts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64
+            }
+          },
+          "required": [
+            "provider",
+            "texts"
+          ],
+          "additionalProperties": false
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "vectors": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 16384
+              },
+              "maxItems": 64
+            }
+          },
+          "required": [
+            "model",
+            "vectors"
+          ],
+          "additionalProperties": false
+        },
+        "metadata": {
+          "providers": [
+            {
+              "id": "openai",
+              "label": "OpenAI",
+              "defaultModel": "text-embedding-3-small",
+              "labelKey": "connectionProviders.openai.name"
+            },
+            {
+              "id": "ollama",
+              "label": "Ollama",
+              "defaultModel": "nomic-embed-text",
+              "labelKey": "connectionProviders.ollama.name"
+            }
+          ]
+        }
+      },
+      {
+        "id": "valley.text-embeddings",
+        "version": "2.0.0",
+        "method": "embeddings.computeV2",
+        "request": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "texts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64
+            },
+            "expectedIdentity": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "revision": {
+                  "type": "union",
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "source",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "provider",
+            "texts"
+          ],
+          "additionalProperties": false
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "vectors": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 16384
+              },
+              "maxItems": 64
+            },
+            "source": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "union",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "model",
+            "vectors",
+            "source",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "metadata": {
+          "providers": [
+            {
+              "id": "openai",
+              "label": "OpenAI",
+              "defaultModel": "text-embedding-3-small",
+              "labelKey": "connectionProviders.openai.name"
+            },
+            {
+              "id": "ollama",
+              "label": "Ollama",
+              "defaultModel": "nomic-embed-text",
+              "labelKey": "connectionProviders.ollama.name"
+            }
+          ],
+          "identity": {
+            "source": "connection-and-endpoint-sha256",
+            "revision": "provider-reported-digest-or-null",
+            "resolution": "explicit-semantic-operation"
+          }
+        }
+      }
+    ]
+  },
+  "assets": "runtime/assets",
+  "permissions": {
+    "network": {
+      "hosts": [
+        "api.telegram.org",
+        "graph.facebook.com",
+        "lookaside.fbsbx.com",
+        "api.anthropic.com",
+        "api.deepseek.com",
+        "generativelanguage.googleapis.com",
+        "api.moonshot.ai",
+        "localhost",
+        "api.openai.com",
+        "api.x.ai"
+      ],
+      "allowUserEndpoints": true,
+      "allowPrivate": true
+    },
+    "accounts": [
+      "ai.chat",
+      "ai.embeddings"
+    ],
+    "credentials": true,
+    "storage": {
+      "vault": true,
+      "metadata": [
+        "plugins/data/assistant"
+      ],
+      "datasets": true
+    },
+    "nativeTools": [
+      "markitdown"
+    ],
+    "incomingHttp": {
+      "ports": [
+        8787
+      ],
+      "allowUserPorts": true
+    },
+    "ai": [
+      "discovery",
+      "chat",
+      "embeddings",
+      "transcription",
+      "speech",
+      "voice"
+    ],
+    "projectRoots": true,
+    "process": {
+      "shell": true,
+      "runtimes": [
+        {
+          "id": "deepseek",
+          "platform": "darwin",
+          "arch": "arm64",
+          "executable": "runtime/assets/native/deepseek/launch.sh",
+          "sha256": "d5be7af2664f0ad01e3aa117688cb6d11f243832ff4088e912ee3850845bd4e1",
+          "artifacts": [
+            {
+              "path": "runtime/assets/native/deepseek/runtime.mjs",
+              "sha256": "bb29d80d92dc2d90339a23b7ed2f7491a25f042f85cfa1a3e60f8ad9118fbf94"
+            },
+            {
+              "path": "runtime/assets/native/node/arm64/node",
+              "sha256": "27db838bb204ef7c21df2931f5656e4c8fb32e6e947f363a402b49714d32b5b1"
+            },
+            {
+              "path": "runtime/assets/native/node/arm64/LICENSE",
+              "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
+            },
+            {
+              "path": "runtime/assets/native/licenses/DeepSeek-LICENSE",
+              "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be"
+            },
+            {
+              "path": "runtime/assets/native/licenses/DeepSeek-DEPENDENCIES.txt",
+              "sha256": "1f61be0193b94dd690c42e101881a71f30b7c5c7446db40f9729a3ac270df09e"
+            },
+            {
+              "path": "runtime/assets/native/node/provenance.json",
+              "sha256": "772decbb99a4ecdfe8e9d50c84fe68db4c3010363640a397afda19c7fb978ce9"
+            },
+            {
+              "path": "runtime/assets/native/build/deepseek-dependencies.json",
+              "sha256": "f68a52b25e8060c6c8892c80b8aa5fb3246a4ee0f48bddcd85344b5b8f1a154c"
+            }
+          ]
+        },
+        {
+          "id": "deepseek",
+          "platform": "darwin",
+          "arch": "x64",
+          "executable": "runtime/assets/native/deepseek/launch.sh",
+          "sha256": "d5be7af2664f0ad01e3aa117688cb6d11f243832ff4088e912ee3850845bd4e1",
+          "artifacts": [
+            {
+              "path": "runtime/assets/native/deepseek/runtime.mjs",
+              "sha256": "bb29d80d92dc2d90339a23b7ed2f7491a25f042f85cfa1a3e60f8ad9118fbf94"
+            },
+            {
+              "path": "runtime/assets/native/node/x64/node",
+              "sha256": "1052eb9c7d6c60a79b968e09f75af55a73462b0f6dff0964336d63b5e13eb63c"
+            },
+            {
+              "path": "runtime/assets/native/node/x64/LICENSE",
+              "sha256": "148eacf7863ef4329224a29398623077200a27194aa075569faf4a0a85566ca5"
+            },
+            {
+              "path": "runtime/assets/native/licenses/DeepSeek-LICENSE",
+              "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be"
+            },
+            {
+              "path": "runtime/assets/native/licenses/DeepSeek-DEPENDENCIES.txt",
+              "sha256": "1f61be0193b94dd690c42e101881a71f30b7c5c7446db40f9729a3ac270df09e"
+            },
+            {
+              "path": "runtime/assets/native/node/provenance.json",
+              "sha256": "772decbb99a4ecdfe8e9d50c84fe68db4c3010363640a397afda19c7fb978ce9"
+            },
+            {
+              "path": "runtime/assets/native/build/deepseek-dependencies.json",
+              "sha256": "f68a52b25e8060c6c8892c80b8aa5fb3246a4ee0f48bddcd85344b5b8f1a154c"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "commandAliases": {
+    "providers:reload": "providers-reload",
+    "harness:list": "harness-list",
+    "harness:inspect": "harness-inspect",
+    "harness:reload": "harness-reload",
+    "harness:run": "harness-run",
+    "harness:cancel": "harness-cancel",
+    "harness:history": "harness-history",
+    "harness:clear-cache": "harness-clear-cache"
+  },
+  "storageInventory": [
+    {
+      "id": "chats",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/chats"
+      }
+    },
+    {
+      "id": "channels",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/channels"
+      }
+    },
+    {
+      "id": "attachment",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/attachment"
+      }
+    },
+    {
+      "id": "personalities",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/personalities"
+      }
+    },
+    {
+      "id": "rules",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/rules"
+      }
+    },
+    {
+      "id": "toolbox",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/toolbox"
+      }
+    },
+    {
+      "id": "commands.json",
+      "kind": "files",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/commands.json"
+      }
+    },
+    {
+      "id": "evaluations",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/evaluations"
+      }
+    },
+    {
+      "id": "evaluation-settings.json",
+      "kind": "files",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/evaluation-settings.json"
+      }
+    },
+    {
+      "id": "evaluation-runs",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/evaluation-runs"
+      }
+    },
+    {
+      "id": "harnesses",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/harnesses"
+      }
+    },
+    {
+      "id": "runtime",
+      "kind": "directory",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/runtime"
+      }
+    },
+    {
+      "id": "README.md",
+      "kind": "files",
+      "store": "durable",
+      "location": {
+        "area": "metadata",
+        "path": "plugins/data/assistant/README.md"
+      }
+    }
+  ],
+  "datasets": [
+    {
+      "id": "attachments",
+      "store": "durable",
+      "version": 1,
+      "title": "Attachments",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "path": {
+          "type": "text"
+        },
+        "fileName": {
+          "type": "text"
+        },
+        "mime": {
+          "type": "text"
+        },
+        "kind": {
+          "type": "text"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "sha256": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "createdAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "attachment_refs",
+      "store": "durable",
+      "version": 1,
+      "title": "Attachment Refs",
+      "primaryKey": [
+        "attachmentId",
+        "chatId"
+      ],
+      "columns": {
+        "attachmentId": {
+          "type": "text"
+        },
+        "chatId": {
+          "type": "text"
+        }
+      }
+    },
+    {
+      "id": "chat_cleanup",
+      "store": "durable",
+      "version": 1,
+      "title": "Chat Cleanup",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "directory": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "error": {
+          "type": "text"
+        },
+        "createdAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "projects",
+      "store": "durable",
+      "version": 1,
+      "title": "Projects",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "name": {
+          "type": "text"
+        },
+        "instructions": {
+          "type": "text"
+        },
+        "folders": {
+          "type": "json"
+        },
+        "createdAt": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "integer"
+        },
+        "deleting": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "id": "chat_search",
+      "store": "cache",
+      "version": 1,
+      "title": "Conversation search",
+      "titleKey": "assistant.search.title",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "title": {
+          "type": "text"
+        },
+        "content": {
+          "type": "text"
+        },
+        "preview": {
+          "type": "text"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      },
+      "indexes": [
+        {
+          "id": "chat_search_fts",
+          "kind": "fts5",
+          "columns": [
+            "title",
+            "content"
+          ]
+        }
+      ],
+      "visibility": "shared",
+      "sensitivity": "sensitive"
+    },
+    {
+      "id": "sessions",
+      "store": "durable",
+      "version": 1,
+      "title": "Sessions",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "session_events",
+      "store": "durable",
+      "version": 1,
+      "title": "Session Events",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "turn_queue",
+      "store": "durable",
+      "version": 1,
+      "title": "Turn Queue",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "tool_executions",
+      "store": "durable",
+      "version": 1,
+      "title": "Tool Executions",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "inbound_receipts",
+      "store": "durable",
+      "version": 1,
+      "title": "Inbound Receipts",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "outbound_deliveries",
+      "store": "durable",
+      "version": 1,
+      "title": "Outbound Deliveries",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "questions",
+      "store": "durable",
+      "version": 1,
+      "title": "Questions",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "context_checkpoints",
+      "store": "durable",
+      "version": 1,
+      "title": "Context Checkpoints",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "inbound_media_jobs",
+      "store": "durable",
+      "version": 1,
+      "title": "Inbound Media Jobs",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "channel_actions",
+      "store": "durable",
+      "version": 1,
+      "title": "Channel Actions",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "plans",
+      "store": "durable",
+      "version": 1,
+      "title": "Plans",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "plan_approvals",
+      "store": "durable",
+      "version": 1,
+      "title": "Plan Approvals",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "instruction_snapshots",
+      "store": "durable",
+      "version": 1,
+      "title": "Instruction Snapshots",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "channel_replies",
+      "store": "durable",
+      "version": 1,
+      "title": "Channel Replies",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "conversation_deletions",
+      "store": "durable",
+      "version": 1,
+      "title": "Conversation deletions",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "attachment_extractions",
+      "store": "durable",
+      "version": 1,
+      "title": "Attachment extraction history",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    },
+    {
+      "id": "quiz_sessions",
+      "store": "durable",
+      "version": 1,
+      "title": "Quiz sessions",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": {
+        "id": {
+          "type": "text"
+        },
+        "conversationId": {
+          "type": "text"
+        },
+        "state": {
+          "type": "text"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "payload": {
+          "type": "json"
+        },
+        "updatedAt": {
+          "type": "integer"
+        }
+      }
+    }
+  ],
+  "searchSources": [
+    {
+      "id": "assistant",
+      "label": "Assistant",
+      "labelKey": "manifest.name",
+      "source": "dataset",
+      "dataset": "assistant.chat_search",
+      "fields": [
+        "title",
+        "content"
+      ],
+      "mode": "keyword",
+      "display": [
+        "title",
+        "preview"
+      ],
+      "default": false,
+      "cardKind": "assistant-chat",
+      "hintKey": "assistant.search.hint",
+      "presentation": {
+        "titleField": "title",
+        "snippetFields": [
+          "content"
+        ],
+        "tagFields": [],
+        "inlineTagFields": [
+          "content"
+        ]
+      }
+    }
+  ]
+}

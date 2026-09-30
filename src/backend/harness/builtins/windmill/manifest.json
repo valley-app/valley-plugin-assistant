@@ -1,0 +1,9 @@
+{
+  "apiVersion": 1,
+  "id": "windmill",
+  "name": "Windmill",
+  "version": "1.0.0",
+  "description": "Provider-contract checks for responses, structured output, tools, termination, and failures.",
+  "author": "Valley",
+  "enabled": true
+}

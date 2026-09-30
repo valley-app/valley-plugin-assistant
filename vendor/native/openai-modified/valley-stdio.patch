@@ -1,0 +1,337 @@
+--- a/codex-rs/http-client/src/lib.rs
++++ b/codex-rs/http-client/src/lib.rs
+@@ -1,3 +1,5 @@
++// Modified for Valley, 2026-09-27: expose the shared stdio model transport.
++pub mod valley_stdio;
+ mod chatgpt_cloudflare_cookies;
+ mod chatgpt_hosts;
+ mod client;
+--- a/codex-rs/http-client/src/transport.rs
++++ b/codex-rs/http-client/src/transport.rs
+@@ -171,8 +171,29 @@
+     }
+ }
+ 
++// Modified for Valley, 2026-09-27: requests for the reserved provider use core-owned AI through stdio.
+ impl HttpTransport for ReqwestTransport {
+     async fn execute(&self, req: Request) -> Result<Response, TransportError> {
++        if req.url.starts_with("https://valley.invalid/") {
++            let body = serde_json::from_str(&request_body_for_trace(&req))
++                .map_err(|error| TransportError::Build(error.to_string()))?;
++            let response = crate::valley_stdio::stream(&req.url, body).await?;
++            let mut bytes = response.bytes;
++            let mut body = BytesMut::new();
++            while let Some(chunk) = bytes.next().await {
++                body.extend_from_slice(&chunk?);
++                if body.len() > 16 * 1024 * 1024 {
++                    return Err(TransportError::ResponseTooLarge {
++                        max_bytes: 16 * 1024 * 1024,
++                    });
++                }
++            }
++            return Ok(Response {
++                status: response.status,
++                headers: response.headers,
++                body: body.freeze(),
++            });
++        }
+         self.trace_request(&req);
+ 
+         let url = req.url.clone();
+@@ -213,6 +234,11 @@
+     }
+ 
+     async fn stream(&self, req: Request) -> Result<StreamResponse, TransportError> {
++        if req.url.starts_with("https://valley.invalid/") {
++            let body = serde_json::from_str(&request_body_for_trace(&req))
++                .map_err(|error| TransportError::Build(error.to_string()))?;
++            return crate::valley_stdio::stream(&req.url, body).await;
++        }
+         self.trace_request(&req);
+ 
+         let url = req.url.clone();
+--- a/codex-rs/app-server-transport/src/transport/stdio.rs
++++ b/codex-rs/app-server-transport/src/transport/stdio.rs
+@@ -30,6 +30,13 @@
+     initialize_client_name_tx: oneshot::Sender<String>,
+     install_shutdown_signal_handler: bool,
+ ) -> IoResult<JoinHandle<()>> {
++    // Modified for Valley, 2026-09-27: multiplex the shared AI bridge on the existing ordered stdio writer.
++    let valley_transport = std::env::var("VALLEY_AI_STDIO").as_deref() == Ok("1");
++    let mut valley_messages = if valley_transport {
++        codex_http_client::valley_stdio::install()
++    } else {
++        None
++    };
+     let shutdown_signal = CancellationToken::new();
+     #[cfg(unix)]
+     if install_shutdown_signal_handler {
+@@ -105,6 +112,9 @@
+                     break;
+                 }
+             };
++            if valley_transport && codex_http_client::valley_stdio::receive(&line).await {
++                continue;
++            }
+             if let Some(client_name) = stdio_initialize_client_name(&line)
+                 && let Some(initialize_client_name_tx) = initialize_client_name_tx.take()
+             {
+@@ -134,7 +144,17 @@
+     };
+ 
+     let write_messages = async move {
+-        while let Some(queued_message) = writer_rx.recv().await {
++        loop {
++            let queued_message = tokio::select! {
++                message = writer_rx.recv() => { let Some(message) = message else { break }; message },
++                message = async { match &mut valley_messages { Some(receiver) => receiver.recv().await, None => std::future::pending().await } } => {
++                    let Some(mut json) = message else { valley_messages = None; continue };
++                    json.push('\n');
++                    let (written_tx, written_rx) = oneshot::channel();
++                    if stdout_tx.send((json, written_tx)).await.is_err() || written_rx.await.is_err() { break; }
++                    continue;
++                }
++            };
+             let Some(mut json) = serialize_outgoing_message(queued_message.message) else {
+                 continue;
+             };
+--- /dev/null
++++ b/codex-rs/http-client/src/valley_stdio.rs
+@@ -0,0 +1,131 @@
++// Modified for Valley, 2026-09-27: route model requests over the owning App Server stdio connection.
++use crate::ByteStream;
++use crate::StreamResponse;
++use crate::TransportError;
++use bytes::Bytes;
++use futures::StreamExt;
++use http::HeaderMap;
++use http::StatusCode;
++use serde_json::Value;
++use serde_json::json;
++use std::collections::HashMap;
++use std::sync::Mutex;
++use std::sync::OnceLock;
++use std::sync::atomic::AtomicU64;
++use std::sync::atomic::Ordering;
++use std::time::Duration;
++use tokio::sync::mpsc;
++
++struct Bridge {
++    outgoing: mpsc::Sender<String>,
++    pending: Mutex<HashMap<u64, mpsc::Sender<Result<Option<Bytes>, String>>>>,
++    next_id: AtomicU64,
++}
++static BRIDGE: OnceLock<Bridge> = OnceLock::new();
++
++pub fn install() -> Option<mpsc::Receiver<String>> {
++    let (outgoing, incoming) = mpsc::channel(32);
++    BRIDGE
++        .set(Bridge {
++            outgoing,
++            pending: Mutex::new(HashMap::new()),
++            next_id: AtomicU64::new(1),
++        })
++        .ok()?;
++    Some(incoming)
++}
++
++pub async fn receive(line: &str) -> bool {
++    let Some(bridge) = BRIDGE.get() else {
++        return false;
++    };
++    let Ok(value) = serde_json::from_str::<Value>(line) else {
++        return false;
++    };
++    if value.get("method").and_then(Value::as_str) != Some("valley/ai/chunk") {
++        return false;
++    }
++    let Some(id) = value["params"]["id"].as_u64() else {
++        return true;
++    };
++    let sender = bridge
++        .pending
++        .lock()
++        .ok()
++        .and_then(|pending| pending.get(&id).cloned());
++    if let Some(sender) = sender {
++        let item = if let Some(error) = value["params"]["error"].as_str() {
++            Err(error.chars().take(4096).collect())
++        } else if value["params"]["done"].as_bool() == Some(true) {
++            Ok(None)
++        } else if let Some(chunk) = value["params"]["chunk"]
++            .as_str()
++            .filter(|chunk| chunk.len() <= 1024 * 1024)
++        {
++            Ok(Some(Bytes::copy_from_slice(chunk.as_bytes())))
++        } else {
++            Err("Invalid Valley transport chunk".to_string())
++        };
++        let _ = sender.send(item).await;
++    }
++    true
++}
++
++struct Lease(u64);
++impl Drop for Lease {
++    fn drop(&mut self) {
++        if let Some(bridge) = BRIDGE.get() {
++            if let Ok(mut pending) = bridge.pending.lock() {
++                pending.remove(&self.0);
++            }
++            let _ = bridge.outgoing.try_send(
++                json!({"jsonrpc":"2.0","method":"valley/ai/cancel","params":{"id":self.0}})
++                    .to_string(),
++            );
++        }
++    }
++}
++
++pub async fn stream(url: &str, body: Value) -> Result<StreamResponse, TransportError> {
++    let bridge = BRIDGE.get().ok_or_else(|| {
++        TransportError::Build("Valley shared transport is unavailable".to_string())
++    })?;
++    let id = bridge.next_id.fetch_add(1, Ordering::Relaxed);
++    let (sender, incoming) = mpsc::channel(16);
++    {
++        let mut pending = bridge
++            .pending
++            .lock()
++            .map_err(|_| TransportError::Build("Valley transport is unavailable".to_string()))?;
++        if pending.len() >= 16 {
++            return Err(TransportError::Build(
++                "Valley transport request limit reached".to_string(),
++            ));
++        }
++        pending.insert(id, sender);
++    }
++    let lease = Lease(id);
++    bridge.outgoing.send(json!({"jsonrpc":"2.0","method":"valley/ai/request","params":{"id":id,"url":url,"body":body}}).to_string()).await.map_err(|_| TransportError::Network("Valley transport closed".to_string()))?;
++    let bytes: ByteStream =
++        futures::stream::try_unfold((incoming, lease), |(mut incoming, lease)| async move {
++            match tokio::time::timeout(Duration::from_secs(900), incoming.recv()).await {
++                Ok(Some(Ok(Some(bytes)))) => Ok(Some((bytes, (incoming, lease)))),
++                Ok(Some(Ok(None))) => Ok(None),
++                Ok(Some(Err(error))) => Err(TransportError::Network(error)),
++                Ok(None) => Err(TransportError::Network(
++                    "Valley transport closed".to_string(),
++                )),
++                Err(_) => Err(TransportError::Timeout),
++            }
++        })
++        .boxed();
++    Ok(StreamResponse {
++        status: StatusCode::OK,
++        headers: HeaderMap::new(),
++        bytes,
++    })
++}
++
++#[cfg(test)]
++#[path = "valley_stdio_tests.rs"]
++mod tests;
+--- /dev/null
++++ b/codex-rs/http-client/src/valley_stdio_tests.rs
+@@ -0,0 +1,41 @@
++// Modified for Valley, 2026-09-27: shared model transport framing and cancellation checks.
++use super::*;
++use pretty_assertions::assert_eq;
++
++#[tokio::test]
++async fn forwards_model_stream_and_reports_dropped_requests() {
++    let mut outgoing = install().expect("install bridge once");
++    let mut response = stream(
++        "https://valley.invalid/responses",
++        json!({"model":"fixture"}),
++    )
++    .await
++    .expect("start stream");
++    let request: Value =
++        serde_json::from_str(&outgoing.recv().await.expect("request")).expect("valid JSON");
++    assert_eq!(request["method"], "valley/ai/request");
++    assert_eq!(request["params"]["body"]["model"], "fixture");
++    let id = request["params"]["id"].as_u64().expect("request id");
++    assert!(
++        receive(
++            &json!({"method":"valley/ai/chunk","params":{"id":id,"chunk":"data: Grüße\n\n"}})
++                .to_string()
++        )
++        .await
++    );
++    assert_eq!(
++        response
++            .bytes
++            .next()
++            .await
++            .expect("chunk")
++            .expect("success"),
++        Bytes::from("data: Grüße\n\n")
++    );
++    drop(response);
++    let cancelled: Value =
++        serde_json::from_str(&outgoing.recv().await.expect("cancel")).expect("valid JSON");
++    assert_eq!(cancelled["method"], "valley/ai/cancel");
++    assert_eq!(cancelled["params"]["id"], id);
++    assert!(!receive("{\"method\":\"turn/start\"}").await);
++}
+--- a/codex-rs/app-server/src/main.rs
++++ b/codex-rs/app-server/src/main.rs
+@@ -1,4 +1,5 @@
+ #![recursion_limit = "256"]
++// Modified for Valley, 2026-09-27: shared Guards and AI own embedded runtime configuration.
+ 
+ use clap::Parser;
+ use codex_app_server::AppServerCodeModeHostArgs;
+@@ -91,7 +92,24 @@
+             remote_control,
+             managed_daemon,
+         } = AppServerArgs::parse();
+-        let loader_overrides = if disable_managed_config_from_debug_env() {
++        let valley_transport = std::env::var("VALLEY_AI_STDIO").as_deref() == Ok("1");
++        let loader_overrides = if valley_transport {
++            let home = PathBuf::from(std::env::var_os("HOME").ok_or_else(|| {
++                anyhow::anyhow!("Valley must provide a conversation-scoped runtime home")
++            })?);
++            LoaderOverrides {
++                managed_config_path: Some(home.join("core-managed.toml")),
++                system_config_path: Some(home.join("core-config.toml")),
++                system_requirements_path: Some(home.join("core-requirements.toml")),
++                ignore_user_config: true,
++                ignore_project_config: true,
++                ignore_user_and_project_exec_policy_rules: true,
++                #[cfg(target_os = "macos")]
++                managed_preferences_base64: Some(String::new()),
++                macos_managed_config_requirements_base64: Some(String::new()),
++                ..Default::default()
++            }
++        } else if disable_managed_config_from_debug_env() {
+             LoaderOverrides::without_managed_config_for_tests()
+         } else {
+             managed_config_path_from_debug_env()
+@@ -105,16 +123,21 @@
+             managed_daemon,
+             ..Default::default()
+         };
++        if valley_transport {
++            runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;
++        }
+         #[cfg(debug_assertions)]
+         if disable_plugin_startup_tasks_for_tests {
+             runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;
+         }
+-        runtime_options.remote_control_startup_mode =
+-            match (remote_control, remote_control_disabled) {
+-                (true, _) => codex_app_server::RemoteControlStartupMode::EnabledEphemeral,
+-                (false, true) => codex_app_server::RemoteControlStartupMode::DisabledEphemeral,
+-                (false, false) => codex_app_server::RemoteControlStartupMode::ResolvePersisted,
+-            };
++        runtime_options.remote_control_startup_mode = match (
++            remote_control && !valley_transport,
++            remote_control_disabled || valley_transport,
++        ) {
++            (true, _) => codex_app_server::RemoteControlStartupMode::EnabledEphemeral,
++            (false, true) => codex_app_server::RemoteControlStartupMode::DisabledEphemeral,
++            (false, false) => codex_app_server::RemoteControlStartupMode::ResolvePersisted,
++        };
+ 
+         let exit = run_main_with_transport_options(
+             arg0_paths,

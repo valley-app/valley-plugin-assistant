@@ -1,0 +1,42 @@
+{
+  "source": "https://github.com/openai/codex",
+  "revision": "8f195c93d7e7acfef95acf273f0e49cce917e291",
+  "displayName": "OpenAI (modified)",
+  "files": [
+    {
+      "path": "codex-rs/http-client/src/lib.rs",
+      "originalSha256": "7f4187bf5774ecc4dbe96c43b4a71730aa696ca2d0912789ffc16e180741294f",
+      "modifiedSha256": "4ce9bb175849787f356c5e98da6619d72216cd282df4c596552f64ae2cddd244"
+    },
+    {
+      "path": "codex-rs/http-client/src/transport.rs",
+      "originalSha256": "88aa391e6893205336b3412b065600bd717da8d80d59c1c7dd094d19bee666b6",
+      "modifiedSha256": "55f44e56c1d29057fcb7f5629344cb32387e5aae72660a6c2ed259ac2b872cee"
+    },
+    {
+      "path": "codex-rs/app-server-transport/src/transport/stdio.rs",
+      "originalSha256": "e4f83304498aec2e9ccad9ad3a0af66965ab93508a4a6923f993731adcd69c19",
+      "modifiedSha256": "1a8f3aa8af7755cad359038fd85467a91fb790b8f9b606c999e884d867f46f80"
+    },
+    {
+      "path": "codex-rs/http-client/src/valley_stdio.rs",
+      "originalSha256": null,
+      "modifiedSha256": "cffd0b59783327fc564b0a5ba825344e213bb1768214e3cf79f5425f73b6c355"
+    },
+    {
+      "path": "codex-rs/http-client/src/valley_stdio_tests.rs",
+      "originalSha256": null,
+      "modifiedSha256": "892ac5d6a24e76e761a139de1a1b95b5d96e01319711e311d60f4a2c809a2717"
+    },
+    {
+      "path": "codex-rs/app-server/src/main.rs",
+      "originalSha256": "6c027c0307379f7426f25812e4422d5740ac6a128a28a51bcf79267516457ced",
+      "modifiedSha256": "a926872df8ec3f387fef903cba3b4aca939b8738f12b359f9392a00cc4722f4d"
+    }
+  ],
+  "changes": [
+    "Model HTTP requests and cancellation use the host shared AI stdio transport.",
+    "In embedded Valley mode, runtime configuration is confined to its conversation home. Core Guards and AI own policy and credentials; global Codex profiles, project rules, preferences IPC, plugin startup and remote control are not loaded. Core enforces every host tool and the macOS process sandbox.",
+    "Build diagnostic paths use the nausicaa identity; executable instruction sections are unchanged and binaries carry renewed ad-hoc signatures."
+  ]
+}

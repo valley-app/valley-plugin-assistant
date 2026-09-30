@@ -1,0 +1,414 @@
+import { stopChatProcesses } from './processScopes'
+import { assertChatWritable, referenceAttachments, deleteChatData, markChatDeleting, datasetRows } from './attachments'
+import { cancelChatRuns } from './engine'
+import { t, backendApi } from './runtime'
+import * as fs from './filesystem'
+import path from 'path-browserify'
+import type { AiChatSummary, AiChatSource, AiChatThread, AiMessage, AiProviderId, CustomCommand } from '../types'
+import type { GuardOverrides } from '@valley/plugin-sdk/guard/types'
+import { atomicWriteFile } from './filesystem'
+import { chatDir, chorusChannelsDir, chorusChatsDir, isSafeName, safeSegment } from './paths'
+import { queuedWriteJson, runExclusive } from './fileQueue'
+import { readJson, readText } from './repositoryFiles'
+import { normalizeCommands } from './commandConfig'
+import { conversationConfiguration } from './configuration/conversations'
+
+// ── Chats (Meadow/Chorus folders) ────────────────────────────────────────────
+// Each chat is a folder: `settings.json` (meta), an append-only `thread.jsonl`
+// (messages, C12), and an optional `memory.jsonl`. App chats live under
+// `Chats/<id>/`; remote-channel chats split under `Channels/<channelId>/<chatRef>/`.
+
+/** The standalone settings.json shape (the meta, minus the messages). */
+interface ChatMeta {
+  titleOrigin?: 'manual' | 'generated' | 'fallback'
+  titleRevision?: number
+  configurationHash?: string
+  instructionsPath?: string
+  mode?: AiChatThread['mode']
+  plan?: AiChatThread['plan']
+  preview?: string
+  messageCount?: number
+  pendingMessages?: import('../types').PendingMessage[]
+  harness?: import('../types').HarnessId
+  projectId?: string
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  model?: { provider: AiProviderId; model: string; connectionId?: string } | null
+  reasoningEffort?: import('../types').ReasoningEffort
+  attachmentParser?: string
+  profileId?: string
+  source?: AiChatSource
+  channelId?: string
+  channelSenderId?: string
+  channelTopicId?: string
+  chatRef?: string
+  channelName?: string
+  channelIdentity?: string
+  commands?: CustomCommand[]
+  pinned?: boolean
+}
+
+const SETTINGS_FILE = 'settings.json'
+const THREAD_FILE = 'thread.jsonl'
+const GUARD_OVERRIDES_FILE = 'guard-overrides.json'
+
+const settingsFile = (dir: string): string => path.join(dir, SETTINGS_FILE)
+const threadFile = (dir: string): string => path.join(dir, THREAD_FILE)
+const guardOverridesFile = (dir: string): string => path.join(dir, GUARD_OVERRIDES_FILE)
+
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await fs.access(file)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function messagePreview(messages: AiMessage[]): string {
+  const message = [...messages].reverse().find(message => (message.role === 'assistant' || message.role === 'user') && message.content.trim())
+  return message?.content.replace(/\s+/g, ' ').trim().slice(0, 240) ?? ''
+}
+
+function metaOf(thread: AiChatThread): ChatMeta {
+  return {
+    mode: thread.mode,
+    plan: thread.plan,
+    preview: messagePreview(thread.messages),
+    messageCount: thread.messages.length,
+    pendingMessages: thread.pendingMessages,
+    id: thread.id,
+    projectId: thread.projectId,
+    title: thread.title,
+    titleOrigin: thread.titleOrigin,
+    titleRevision: thread.titleRevision,
+    configurationHash: thread.configurationHash,
+    instructionsPath: thread.instructionsPath,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    model: thread.model ?? null,
+    reasoningEffort: thread.reasoningEffort,
+    harness: thread.harness,
+    attachmentParser: thread.attachmentParser,
+    profileId: thread.profileId,
+    source: thread.source,
+    channelId: thread.channelId,
+    channelSenderId: thread.channelSenderId,
+    channelTopicId: thread.channelTopicId,
+    chatRef: thread.chatRef,
+    channelName: thread.channelName,
+    channelIdentity: thread.channelIdentity,
+    commands: thread.commands?.length ? normalizeCommands(thread.commands) : undefined,
+    pinned: thread.pinned
+  }
+}
+
+function threadFromMeta(meta: ChatMeta, messages: AiMessage[]): AiChatThread {
+  return {
+    mode: meta.mode,
+    plan: meta.plan,
+    pendingMessages: meta.pendingMessages,
+    id: meta.id,
+    projectId: meta.projectId,
+    title: meta.title,
+    titleOrigin: meta.titleOrigin,
+    titleRevision: meta.titleRevision,
+    configurationHash: meta.configurationHash,
+    instructionsPath: meta.instructionsPath,
+    createdAt: meta.createdAt,
+    updatedAt: meta.updatedAt,
+    model: meta.model,
+    reasoningEffort: meta.reasoningEffort,
+    harness: meta.harness,
+    attachmentParser: meta.attachmentParser,
+    profileId: meta.profileId,
+    messages,
+    source: meta.source,
+    channelId: meta.channelId,
+    channelSenderId: meta.channelSenderId,
+    channelTopicId: meta.channelTopicId,
+    chatRef: meta.chatRef,
+    channelName: meta.channelName,
+    channelIdentity: meta.channelIdentity,
+    commands: meta.commands?.length ? meta.commands : undefined,
+    pinned: meta.pinned
+  }
+}
+
+/** Tolerant parse of one folder's `settings.json` → meta (null if absent/invalid). */
+async function readMeta(dir: string): Promise<ChatMeta | null> {
+  const meta = await readJson<ChatMeta | null>(settingsFile(dir), null)
+  return meta && typeof meta.id === 'string' ? meta : null
+}
+
+/** Tolerant parse of `thread.jsonl` → messages (skips malformed lines). */
+async function readThreadMessages(dir: string): Promise<AiMessage[]> {
+  const text = await readText(threadFile(dir))
+  if (!text) return []
+  const messages: AiMessage[] = []
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    try {
+      messages.push(JSON.parse(line) as AiMessage)
+    } catch {
+      // skip a malformed message line
+    }
+  }
+  return messages
+}
+
+/**
+ * Resolve a chat id to its on-disk folder. App chats are addressed directly
+ * (`Chats/<id>/`); a remote-channel id (`tg-…` / `wa-…`) is not reliably
+ * parseable, so we scan `Channels/<*>/<*>/` for a matching `settings.json`.
+ * Returns null when the chat does not exist.
+ */
+export async function resolveChatDir(vaultRoot: string, id: string): Promise<string | null> {
+  if (!isSafeName(id)) return null
+  const appDir = path.join(chorusChatsDir(vaultRoot), safeSegment(id))
+  if (await pathExists(settingsFile(appDir))) return appDir
+  let channels: import('./filesystem').DirectoryEntry[]
+  try {
+    channels = await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true })
+  } catch {
+    return null
+  }
+  for (const ch of channels) {
+    if (!ch.isDirectory()) continue
+    let refs: import('./filesystem').DirectoryEntry[]
+    try {
+      refs = await fs.readdir(path.join(chorusChannelsDir(vaultRoot), ch.name), { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const ref of refs) {
+      if (!ref.isDirectory()) continue
+      const dir = path.join(chorusChannelsDir(vaultRoot), ch.name, ref.name)
+      if ((await readMeta(dir))?.id === id) return dir
+    }
+  }
+  return null
+}
+
+export async function listChats(vaultRoot: string, includeEmpty = false): Promise<AiChatSummary[]> {
+  const byId = new Map<string, AiChatSummary>()
+  const add = async (meta: ChatMeta, dir: string): Promise<void> => {
+    if (!includeEmpty && !(meta.messageCount ?? (await readThreadMessages(dir)).length) && !meta.pendingMessages?.length) return
+    // Emit `model`/`profileId` only when set — an explicit `null`/`undefined`
+    // would change object identity for equality-based consumers.
+    const summary: AiChatSummary = { id: meta.id, title: meta.title, updatedAt: meta.updatedAt }
+    const preview = meta.preview ?? messagePreview(await readThreadMessages(dir))
+    if (preview) summary.preview = preview
+    if (meta.projectId) summary.projectId = meta.projectId
+    if (meta.harness) summary.harness = meta.harness
+    if (meta.model) summary.model = meta.model
+    if (meta.profileId) summary.profileId = meta.profileId
+    if (meta.source) summary.source = meta.source
+    if (meta.channelId) summary.channelId = meta.channelId
+    if (meta.channelName) summary.channelName = meta.channelName
+    if (meta.channelIdentity) summary.channelIdentity = meta.channelIdentity
+    if (meta.commands?.length) summary.commands = meta.commands
+    if (meta.pinned) summary.pinned = true
+    byId.set(meta.id, summary)
+  }
+  // App chats: one folder each under Chats/.
+  try {
+    for (const d of await fs.readdir(chorusChatsDir(vaultRoot), { withFileTypes: true })) {
+      if (!d.isDirectory()) continue
+      const meta = await readMeta(path.join(chorusChatsDir(vaultRoot), d.name))
+      if (meta) await add(meta, path.join(chorusChatsDir(vaultRoot), d.name))
+    }
+  } catch {
+    /* no app chats yet */
+  }
+  // Remote-channel chats: Channels/<channelId>/<chatRef>/.
+  try {
+    for (const ch of await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true })) {
+      if (!ch.isDirectory()) continue
+      const channelDir = path.join(chorusChannelsDir(vaultRoot), ch.name)
+      for (const ref of await fs.readdir(channelDir, { withFileTypes: true })) {
+        if (!ref.isDirectory()) continue
+        const meta = await readMeta(path.join(channelDir, ref.name))
+        if (meta) await add(meta, path.join(channelDir, ref.name))
+      }
+    }
+  } catch {
+    /* no remote-channel chats yet */
+  }
+  return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export async function readChat(vaultRoot: string, id: string): Promise<AiChatThread | null> {
+  if (!isSafeName(id)) return null
+  const dir = await resolveChatDir(vaultRoot, id)
+  if (dir) {
+    const meta = await readMeta(dir)
+    if (meta) {
+      const configuration = await conversationConfiguration(vaultRoot, dir, meta)
+      return threadFromMeta({ ...meta, ...configuration.settings, configurationHash: configuration.hash, instructionsPath: configuration.instructionsPath }, await readThreadMessages(dir))
+    }
+  }
+  return null
+}
+
+async function indexChat(thread: AiChatThread): Promise<void> {
+  if (!thread.messages.length && !thread.pendingMessages?.length) { await backendApi().data.dataset('chat_search').delete({ id: thread.id }); return }
+  const messages = thread.messages.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+  await backendApi().data.dataset('chat_search').upsert({ id: thread.id, title: thread.title, content: messages.map(message => message.content).join('\n'), preview: messagePreview(messages), updatedAt: thread.updatedAt })
+}
+
+async function updateChatSearch(operation: () => Promise<void>): Promise<void> {
+  try { await operation() } catch (error) { backendApi().rpc.emit('backendError', String(error)) }
+}
+
+export async function rebuildChatSearch(vaultRoot: string): Promise<void> {
+  const dataset = backendApi().data.dataset('chat_search')
+  const existing = new Map((await datasetRows(dataset)).map(row => [row.id, row]))
+  for (const summary of await listChats(vaultRoot)) {
+    const cached = existing.get(summary.id)
+    if (!cached || cached.updatedAt !== summary.updatedAt || cached.title !== summary.title) {
+      const thread = await readChat(vaultRoot, summary.id)
+      if (thread) await indexChat(thread)
+    }
+    existing.delete(summary.id)
+  }
+  for (const id of existing.keys()) if (typeof id === 'string') await dataset.delete({ id })
+}
+
+export async function saveChat(vaultRoot: string, thread: AiChatThread): Promise<void> {
+  if (!isSafeName(thread.id)) throw new Error(t('assistant.backend.invalidChat', { value: thread.id }))
+  return runExclusive(`chat:${thread.id}`, async () => {
+  await assertChatWritable(thread.id)
+  if (thread.projectId) {
+    const project = await backendApi().data.dataset('projects').get({ id: thread.projectId })
+    if (!project || project.deleting) delete thread.projectId
+  }
+  await referenceAttachments(thread.id, [...thread.messages, ...(thread.pendingMessages ?? []).map(item => ({ role: 'user' as const, content: item.text, attachmentIds: item.attachments?.flatMap(attachment => attachment.id ? [attachment.id] : []) }))])
+  const dir = chatDir(vaultRoot, thread)
+  await fs.mkdir(dir, { recursive: true })
+  const prior = await readMeta(dir)
+  const configuration = await conversationConfiguration(vaultRoot, dir, prior ?? thread, thread, thread.configurationHash)
+  Object.assign(thread, configuration.settings, { configurationHash: configuration.hash, instructionsPath: configuration.instructionsPath })
+  if (prior && (prior.titleOrigin === 'manual' || prior.titleOrigin === 'generated' && (thread.titleRevision ?? 0) <= (prior.titleRevision ?? 0))) { thread.title = prior.title; thread.titleOrigin = prior.titleOrigin; thread.titleRevision = prior.titleRevision; thread.channelIdentity = prior.channelIdentity ?? thread.channelIdentity }
+  else if (prior && thread.title !== prior.title && thread.titleOrigin !== 'generated' && thread.titleOrigin !== 'fallback') { thread.titleOrigin = 'manual'; thread.titleRevision = (prior.titleRevision ?? 0) + 1 }
+  await queuedWriteJson(settingsFile(dir), metaOf(thread))
+  const file = threadFile(dir)
+  await runExclusive(file, async () => {
+    const existing = await readThreadMessages(dir)
+    const unchangedPrefix = thread.messages.length >= existing.length
+      && existing.every((message, index) => JSON.stringify(message) === JSON.stringify(thread.messages[index]))
+    if (unchangedPrefix) {
+      const delta = thread.messages.slice(existing.length)
+      if (delta.length) await fs.appendFile(file, delta.map((m) => JSON.stringify(m)).join('\n') + '\n', 'utf8')
+    } else {
+      await atomicWriteFile(file, thread.messages.map((m) => JSON.stringify(m)).join('\n') + (thread.messages.length ? '\n' : ''))
+    }
+  })
+  await updateChatSearch(() => indexChat(thread))
+  })
+}
+
+export async function renameChat(vaultRoot: string, id: string, title: string): Promise<void> {
+  if (!isSafeName(id)) return
+  return runExclusive(`chat:${id}`, async () => {
+  await assertChatWritable(id)
+  const dir = await resolveChatDir(vaultRoot, id)
+  if (!dir) return
+  const meta = await readMeta(dir)
+  if (!meta) return
+  await queuedWriteJson(settingsFile(dir), { ...meta, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}), title, titleOrigin: 'manual', titleRevision: (meta.titleRevision ?? 0) + 1 })
+  await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id); if (thread) await indexChat(thread) })
+  })
+}
+
+export async function applyGeneratedTitle(vaultRoot: string, id: string, title: string, expected: { title: string; revision: number }): Promise<boolean> {
+  if (!isSafeName(id) || !title.trim()) return false
+  return runExclusive(`chat:${id}`, async () => {
+    await assertChatWritable(id)
+    const dir = await resolveChatDir(vaultRoot, id)
+    if (!dir) return false
+    const meta = await readMeta(dir)
+    if (!meta || meta.titleOrigin !== 'fallback' || meta.title !== expected.title || (meta.titleRevision ?? 0) !== expected.revision) return false
+    await queuedWriteJson(settingsFile(dir), { ...meta, title, titleOrigin: 'generated', titleRevision: expected.revision + 1, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}) })
+    await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id); if (thread) await indexChat(thread) })
+    backendApi().rpc.emit('conversations.changed', { id })
+    return true
+  })
+}
+
+export async function setChatPinned(vaultRoot: string, id: string, pinned: boolean): Promise<void> {
+  if (!isSafeName(id)) return
+  return runExclusive(`chat:${id}`, async () => {
+  await assertChatWritable(id)
+  const dir = await resolveChatDir(vaultRoot, id)
+  if (!dir) return
+  const meta = await readMeta(dir)
+  if (!meta) return
+  await queuedWriteJson(settingsFile(dir), { ...meta, pinned: pinned || undefined })
+  })
+}
+
+export async function deleteChat(vaultRoot: string, id: string): Promise<void> {
+  if (!isSafeName(id)) return
+  await runExclusive(`chat:${id}`, async () => { await markChatDeleting(id, await resolveChatDir(vaultRoot, id) ?? '') })
+  await cancelChatRuns(id)
+  await stopChatProcesses(id, true)
+  await runExclusive(`chat:${id}`, async () => {
+    const dir = await resolveChatDir(vaultRoot, id)
+    await deleteChatData(id, dir ?? '')
+    await updateChatSearch(async () => { await backendApi().data.dataset('chat_search').delete({ id }) })
+  })
+}
+
+/**
+ * Wipe a chat's active context (the `/clear` command) WITHOUT deleting its
+ * long-term `memory.jsonl` — the thread is reset but extracted facts persist.
+ */
+export async function clearChat(vaultRoot: string, id: string): Promise<void> {
+  if (!isSafeName(id)) return
+  return runExclusive(`chat:${id}`, async () => {
+  await assertChatWritable(id)
+  const dir = await resolveChatDir(vaultRoot, id)
+  if (dir) {
+    await fs.rm(threadFile(dir), { force: true })
+    const meta = await readMeta(dir)
+    if (meta) {
+      const cleared = { ...meta, preview: '', messageCount: 0, updatedAt: Date.now() }
+      await queuedWriteJson(settingsFile(dir), cleared)
+      await updateChatSearch(() => indexChat(threadFromMeta(cleared, [])))
+    }
+  }
+  })
+}
+
+// ── Per-chat guard overrides (guard-overrides.json, narrow-only) ──────────────
+// Remembered approval choices ("Always allow/ask/block here", in-app or remote channel)
+// persist beside the chat as a `GuardOverrides` (spec §4.4). They can only narrow
+// the global policy or pre-approve a globally pre-approvable `confirm`; the shared
+// resolver enforces that, and main re-enforces the global ceiling — so persisting
+// the raw choice is safe.
+
+/** Read a chat's persisted guard overrides (null when absent). */
+export async function readGuardOverrides(vaultRoot: string, id: string): Promise<GuardOverrides | null> {
+  if (!isSafeName(id)) return null
+  const dir = await resolveChatDir(vaultRoot, id)
+  if (!dir) return null
+  return readJson<GuardOverrides | null>(guardOverridesFile(dir), null)
+}
+
+/**
+ * Persist a chat's guard overrides (atomic, queued, C16). The chat folder is taken
+ * from `thread` when given (so a brand-new remote-channel chat resolves), else by id.
+ */
+export async function saveGuardOverrides(vaultRoot: string, ref: { id: string } | AiChatThread, overrides: GuardOverrides): Promise<void> {
+  if (!isSafeName(ref.id)) throw new Error(t('assistant.backend.invalidChat', { value: ref.id }))
+  return runExclusive(`chat:${ref.id}`, async () => {
+  await assertChatWritable(ref.id)
+  const dir =
+    'messages' in ref ? chatDir(vaultRoot, ref) : (await resolveChatDir(vaultRoot, ref.id)) ?? path.join(chorusChatsDir(vaultRoot), safeSegment(ref.id))
+  await fs.mkdir(dir, { recursive: true })
+  await queuedWriteJson(guardOverridesFile(dir), overrides)
+  })
+}

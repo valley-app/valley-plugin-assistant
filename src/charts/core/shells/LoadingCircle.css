@@ -1,0 +1,20 @@
+.loading-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-circle-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-medium);
+  border-top-color: var(--accent-color);
+  animation: loading-circle-spin 0.7s linear infinite;
+}
+
+@keyframes loading-circle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

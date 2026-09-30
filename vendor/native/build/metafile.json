@@ -1,0 +1,4471 @@
+{
+  "inputs": {
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/misc.ts": {
+      "bytes": 3865,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/array.ts": {
+      "bytes": 1453,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/misc.ts",
+          "kind": "import-statement",
+          "original": "./misc.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/volatile.ts": {
+      "bytes": 3637,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/types.ts": {
+      "bytes": 7038,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/misc.ts",
+          "kind": "import-statement",
+          "original": "./misc.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/volatile.ts",
+          "kind": "import-statement",
+          "original": "./volatile.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/string.ts": {
+      "bytes": 3928,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/time.ts": {
+      "bytes": 3054,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts": {
+      "bytes": 506,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/array.ts",
+          "kind": "import-statement",
+          "original": "./array.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/misc.ts",
+          "kind": "import-statement",
+          "original": "./misc.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/string.ts",
+          "kind": "import-statement",
+          "original": "./string.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/time.ts",
+          "kind": "import-statement",
+          "original": "./time.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/volatile.ts",
+          "kind": "import-statement",
+          "original": "./volatile.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts": {
+      "bytes": 10236,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/events.ts": {
+      "bytes": 14917,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/context.ts",
+          "kind": "import-statement",
+          "original": "./context.ts"
+        },
+        {
+          "path": "./fiber.ts",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/logger.ts": {
+      "bytes": 8644,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "./context.ts",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "./fiber.ts",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/fiber.ts": {
+      "bytes": 24960,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/context.ts",
+          "kind": "import-statement",
+          "original": "./context.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/reflect.ts": {
+      "bytes": 15434,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "./context.ts",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/fiber.ts",
+          "kind": "import-statement",
+          "original": "./fiber.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/registry.ts": {
+      "bytes": 11753,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "./context.ts",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/fiber.ts",
+          "kind": "import-statement",
+          "original": "./fiber.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/context.ts": {
+      "bytes": 6153,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/events.ts",
+          "kind": "import-statement",
+          "original": "./events.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/logger.ts",
+          "kind": "import-statement",
+          "original": "./logger.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/reflect.ts",
+          "kind": "import-statement",
+          "original": "./reflect.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/registry.ts",
+          "kind": "import-statement",
+          "original": "./registry.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/fiber.ts",
+          "kind": "import-statement",
+          "original": "./fiber.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/service.ts": {
+      "bytes": 4263,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/context.ts",
+          "kind": "import-statement",
+          "original": "./context.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts": {
+      "bytes": 815,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/context.ts",
+          "kind": "import-statement",
+          "original": "./context.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/events.ts",
+          "kind": "import-statement",
+          "original": "./events.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/fiber.ts",
+          "kind": "import-statement",
+          "original": "./fiber.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/logger.ts",
+          "kind": "import-statement",
+          "original": "./logger.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/registry.ts",
+          "kind": "import-statement",
+          "original": "./registry.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/service.ts",
+          "kind": "import-statement",
+          "original": "./service.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts",
+          "kind": "import-statement",
+          "original": "./utils.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/remote-error.ts": {
+      "bytes": 2083,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/owned-value.ts": {
+      "bytes": 1429,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/json-value.ts": {
+      "bytes": 2179,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/index.ts": {
+      "bytes": 13143,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/remote-error.ts",
+          "kind": "import-statement",
+          "original": "./remote-error.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/owned-value.ts",
+          "kind": "import-statement",
+          "original": "./owned-value.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/json-value.ts",
+          "kind": "import-statement",
+          "original": "./json-value.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts": {
+      "bytes": 11711,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/crypto/src/index.ts": {
+      "bytes": 1683,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts": {
+      "bytes": 1520,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/message.ts": {
+      "bytes": 11275,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/crypto/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-crypto"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts": {
+      "bytes": 36623,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/timeout/src/index.ts": {
+      "bytes": 7475,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/error.ts": {
+      "bytes": 8267,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/retry-policy.ts": {
+      "bytes": 7612,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/timeout/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-timeout"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/call-config.ts": {
+      "bytes": 2873,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/adapter-failure.ts": {
+      "bytes": 4183,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/api-key.ts": {
+      "bytes": 1766,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/content.ts": {
+      "bytes": 21501,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/attribution.ts": {
+      "bytes": 2692,
+      "imports": [
+        {
+          "path": "node:module",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/brand.ts": {
+      "bytes": 2574,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/types.ts": {
+      "bytes": 22007,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assembler.ts": {
+      "bytes": 7998,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/message.ts",
+          "kind": "import-statement",
+          "original": "./message.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assistant-stream.ts": {
+      "bytes": 21368,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assembler.ts",
+          "kind": "import-statement",
+          "original": "./assembler.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts": {
+      "bytes": 52048,
+      "imports": [
+        {
+          "path": "@deepseek-ai/cordis",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-typert-protocol"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/message.ts",
+          "kind": "import-statement",
+          "original": "./message.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/retry-policy.ts",
+          "kind": "import-statement",
+          "original": "./retry-policy.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/call-config.ts",
+          "kind": "import-statement",
+          "original": "./call-config.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/adapter-failure.ts",
+          "kind": "import-statement",
+          "original": "./adapter-failure.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/api-key.ts",
+          "kind": "import-statement",
+          "original": "./api-key.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/content.ts",
+          "kind": "import-statement",
+          "original": "./content.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/attribution.ts",
+          "kind": "import-statement",
+          "original": "./attribution.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/brand.ts",
+          "kind": "import-statement",
+          "original": "./brand.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/api-key.ts",
+          "kind": "import-statement",
+          "original": "./api-key.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/content.ts",
+          "kind": "import-statement",
+          "original": "./content.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assistant-stream.ts",
+          "kind": "import-statement",
+          "original": "./assistant-stream.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/message.ts",
+          "kind": "import-statement",
+          "original": "./message.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/retry-policy.ts",
+          "kind": "import-statement",
+          "original": "./retry-policy.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assembler.ts",
+          "kind": "import-statement",
+          "original": "./assembler.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/call-config.ts",
+          "kind": "import-statement",
+          "original": "./call-config.ts"
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/store.ts": {
+      "bytes": 8013,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "./index.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts": {
+      "bytes": 8123,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/store.ts",
+          "kind": "import-statement",
+          "original": "./store.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/archive-admission.ts": {
+      "bytes": 1750,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/runtime-types.ts": {
+      "bytes": 19263,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/types.ts": {
+      "bytes": 3887,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/consumed-work.ts": {
+      "bytes": 4495,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/model-selection.ts": {
+      "bytes": 5041,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/dispatch.ts": {
+      "bytes": 8579,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/index.ts": {
+      "bytes": 31340,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "node:async_hooks",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:util/types",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/archive-admission.ts",
+          "kind": "import-statement",
+          "original": "./archive-admission.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/runtime-types.ts",
+          "kind": "import-statement",
+          "original": "./runtime-types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/consumed-work.ts",
+          "kind": "import-statement",
+          "original": "./consumed-work.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/model-selection.ts",
+          "kind": "import-statement",
+          "original": "./model-selection.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/dispatch.ts",
+          "kind": "import-statement",
+          "original": "./dispatch.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/core.js": {
+      "bytes": 2578,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/util.js": {
+      "bytes": 22018,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/core.js",
+          "kind": "import-statement",
+          "original": "./core.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/errors.js": {
+      "bytes": 6413,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/core.js",
+          "kind": "import-statement",
+          "original": "./core.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/parse.js": {
+      "bytes": 4444,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/core.js",
+          "kind": "import-statement",
+          "original": "./core.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/errors.js",
+          "kind": "import-statement",
+          "original": "./errors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/regexes.js": {
+      "bytes": 9078,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/checks.js": {
+      "bytes": 20005,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/core.js",
+          "kind": "import-statement",
+          "original": "./core.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/regexes.js",
+          "kind": "import-statement",
+          "original": "./regexes.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/doc.js": {
+      "bytes": 1088,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/versions.js": {
+      "bytes": 70,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/schemas.js": {
+      "bytes": 83322,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/checks.js",
+          "kind": "import-statement",
+          "original": "./checks.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/core.js",
+          "kind": "import-statement",
+          "original": "./core.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/doc.js",
+          "kind": "import-statement",
+          "original": "./doc.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/parse.js",
+          "kind": "import-statement",
+          "original": "./parse.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/regexes.js",
+          "kind": "import-statement",
+          "original": "./regexes.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/versions.js",
+          "kind": "import-statement",
+          "original": "./versions.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ar.js": {
+      "bytes": 5188,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/az.js": {
+      "bytes": 4511,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/be.js": {
+      "bytes": 6619,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/bg.js": {
+      "bytes": 5785,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ca.js": {
+      "bytes": 4710,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/cs.js": {
+      "bytes": 4772,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/da.js": {
+      "bytes": 4804,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/de.js": {
+      "bytes": 4588,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/el.js": {
+      "bytes": 5544,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/en.js": {
+      "bytes": 4805,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/eo.js": {
+      "bytes": 4603,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/es.js": {
+      "bytes": 5439,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/fa.js": {
+      "bytes": 5131,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/fi.js": {
+      "bytes": 4818,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/fr.js": {
+      "bytes": 5137,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/fr-CA.js": {
+      "bytes": 4554,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/he.js": {
+      "bytes": 12005,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/hr.js": {
+      "bytes": 5052,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/hu.js": {
+      "bytes": 4696,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/hy.js": {
+      "bytes": 6390,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/id.js": {
+      "bytes": 4577,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/is.js": {
+      "bytes": 4635,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/it.js": {
+      "bytes": 4582,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ja.js": {
+      "bytes": 4851,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ka.js": {
+      "bytes": 6202,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/km.js": {
+      "bytes": 6242,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/kh.js": {
+      "bytes": 111,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/locales/km.js",
+          "kind": "import-statement",
+          "original": "./km.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ko.js": {
+      "bytes": 4929,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/lt.js": {
+      "bytes": 8082,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/mk.js": {
+      "bytes": 5157,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ms.js": {
+      "bytes": 4491,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/nl.js": {
+      "bytes": 4762,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/no.js": {
+      "bytes": 4506,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ota.js": {
+      "bytes": 4525,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ps.js": {
+      "bytes": 4909,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/pl.js": {
+      "bytes": 4966,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/pt.js": {
+      "bytes": 4568,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ro.js": {
+      "bytes": 4774,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ru.js": {
+      "bytes": 6714,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/sl.js": {
+      "bytes": 4567,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/sv.js": {
+      "bytes": 4663,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ta.js": {
+      "bytes": 6369,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/th.js": {
+      "bytes": 6290,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/tr.js": {
+      "bytes": 4454,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/uk.js": {
+      "bytes": 5430,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ua.js": {
+      "bytes": 111,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/locales/uk.js",
+          "kind": "import-statement",
+          "original": "./uk.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/ur.js": {
+      "bytes": 5271,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/uz.js": {
+      "bytes": 4739,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/vi.js": {
+      "bytes": 4772,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/zh-CN.js": {
+      "bytes": 4452,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/zh-TW.js": {
+      "bytes": 4498,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/yo.js": {
+      "bytes": 4665,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/locales/index.js": {
+      "bytes": 2149,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/locales/ar.js",
+          "kind": "import-statement",
+          "original": "./ar.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/az.js",
+          "kind": "import-statement",
+          "original": "./az.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/be.js",
+          "kind": "import-statement",
+          "original": "./be.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/bg.js",
+          "kind": "import-statement",
+          "original": "./bg.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ca.js",
+          "kind": "import-statement",
+          "original": "./ca.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/cs.js",
+          "kind": "import-statement",
+          "original": "./cs.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/da.js",
+          "kind": "import-statement",
+          "original": "./da.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/de.js",
+          "kind": "import-statement",
+          "original": "./de.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/el.js",
+          "kind": "import-statement",
+          "original": "./el.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/en.js",
+          "kind": "import-statement",
+          "original": "./en.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/eo.js",
+          "kind": "import-statement",
+          "original": "./eo.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/es.js",
+          "kind": "import-statement",
+          "original": "./es.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/fa.js",
+          "kind": "import-statement",
+          "original": "./fa.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/fi.js",
+          "kind": "import-statement",
+          "original": "./fi.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/fr.js",
+          "kind": "import-statement",
+          "original": "./fr.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/fr-CA.js",
+          "kind": "import-statement",
+          "original": "./fr-CA.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/he.js",
+          "kind": "import-statement",
+          "original": "./he.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/hr.js",
+          "kind": "import-statement",
+          "original": "./hr.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/hu.js",
+          "kind": "import-statement",
+          "original": "./hu.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/hy.js",
+          "kind": "import-statement",
+          "original": "./hy.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/id.js",
+          "kind": "import-statement",
+          "original": "./id.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/is.js",
+          "kind": "import-statement",
+          "original": "./is.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/it.js",
+          "kind": "import-statement",
+          "original": "./it.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ja.js",
+          "kind": "import-statement",
+          "original": "./ja.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ka.js",
+          "kind": "import-statement",
+          "original": "./ka.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/kh.js",
+          "kind": "import-statement",
+          "original": "./kh.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/km.js",
+          "kind": "import-statement",
+          "original": "./km.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ko.js",
+          "kind": "import-statement",
+          "original": "./ko.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/lt.js",
+          "kind": "import-statement",
+          "original": "./lt.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/mk.js",
+          "kind": "import-statement",
+          "original": "./mk.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ms.js",
+          "kind": "import-statement",
+          "original": "./ms.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/nl.js",
+          "kind": "import-statement",
+          "original": "./nl.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/no.js",
+          "kind": "import-statement",
+          "original": "./no.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ota.js",
+          "kind": "import-statement",
+          "original": "./ota.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ps.js",
+          "kind": "import-statement",
+          "original": "./ps.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/pl.js",
+          "kind": "import-statement",
+          "original": "./pl.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/pt.js",
+          "kind": "import-statement",
+          "original": "./pt.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ro.js",
+          "kind": "import-statement",
+          "original": "./ro.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ru.js",
+          "kind": "import-statement",
+          "original": "./ru.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/sl.js",
+          "kind": "import-statement",
+          "original": "./sl.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/sv.js",
+          "kind": "import-statement",
+          "original": "./sv.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ta.js",
+          "kind": "import-statement",
+          "original": "./ta.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/th.js",
+          "kind": "import-statement",
+          "original": "./th.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/tr.js",
+          "kind": "import-statement",
+          "original": "./tr.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ua.js",
+          "kind": "import-statement",
+          "original": "./ua.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/uk.js",
+          "kind": "import-statement",
+          "original": "./uk.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/ur.js",
+          "kind": "import-statement",
+          "original": "./ur.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/uz.js",
+          "kind": "import-statement",
+          "original": "./uz.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/vi.js",
+          "kind": "import-statement",
+          "original": "./vi.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/zh-CN.js",
+          "kind": "import-statement",
+          "original": "./zh-CN.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/zh-TW.js",
+          "kind": "import-statement",
+          "original": "./zh-TW.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/yo.js",
+          "kind": "import-statement",
+          "original": "./yo.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/registries.js": {
+      "bytes": 1512,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/api.js": {
+      "bytes": 28054,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/checks.js",
+          "kind": "import-statement",
+          "original": "./checks.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/registries.js",
+          "kind": "import-statement",
+          "original": "./registries.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/schemas.js",
+          "kind": "import-statement",
+          "original": "./schemas.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/to-json-schema.js": {
+      "bytes": 17006,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/registries.js",
+          "kind": "import-statement",
+          "original": "./registries.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/json-schema-processors.js": {
+      "bytes": 20716,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/to-json-schema.js",
+          "kind": "import-statement",
+          "original": "./to-json-schema.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/json-schema-generator.js": {
+      "bytes": 3218,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/json-schema-processors.js",
+          "kind": "import-statement",
+          "original": "./json-schema-processors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/to-json-schema.js",
+          "kind": "import-statement",
+          "original": "./to-json-schema.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/json-schema.js": {
+      "bytes": 11,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/core/index.js": {
+      "bytes": 594,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/core.js",
+          "kind": "import-statement",
+          "original": "./core.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/parse.js",
+          "kind": "import-statement",
+          "original": "./parse.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/errors.js",
+          "kind": "import-statement",
+          "original": "./errors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/schemas.js",
+          "kind": "import-statement",
+          "original": "./schemas.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/checks.js",
+          "kind": "import-statement",
+          "original": "./checks.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/versions.js",
+          "kind": "import-statement",
+          "original": "./versions.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "./util.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/regexes.js",
+          "kind": "import-statement",
+          "original": "./regexes.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/index.js",
+          "kind": "import-statement",
+          "original": "../locales/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/registries.js",
+          "kind": "import-statement",
+          "original": "./registries.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/doc.js",
+          "kind": "import-statement",
+          "original": "./doc.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/api.js",
+          "kind": "import-statement",
+          "original": "./api.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/to-json-schema.js",
+          "kind": "import-statement",
+          "original": "./to-json-schema.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/json-schema-processors.js",
+          "kind": "import-statement",
+          "original": "./json-schema-processors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/json-schema-generator.js",
+          "kind": "import-statement",
+          "original": "./json-schema-generator.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/json-schema.js",
+          "kind": "import-statement",
+          "original": "./json-schema.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/checks.js": {
+      "bytes": 663,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/iso.js": {
+      "bytes": 1151,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/schemas.js",
+          "kind": "import-statement",
+          "original": "./schemas.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/errors.js": {
+      "bytes": 1609,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/util.js",
+          "kind": "import-statement",
+          "original": "../core/util.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/parse.js": {
+      "bytes": 997,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/errors.js",
+          "kind": "import-statement",
+          "original": "./errors.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/schemas.js": {
+      "bytes": 51378,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/json-schema-processors.js",
+          "kind": "import-statement",
+          "original": "../core/json-schema-processors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/to-json-schema.js",
+          "kind": "import-statement",
+          "original": "../core/to-json-schema.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/checks.js",
+          "kind": "import-statement",
+          "original": "./checks.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/iso.js",
+          "kind": "import-statement",
+          "original": "./iso.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/parse.js",
+          "kind": "import-statement",
+          "original": "./parse.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/compat.js": {
+      "bytes": 1090,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/from-json-schema.js": {
+      "bytes": 24161,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/registries.js",
+          "kind": "import-statement",
+          "original": "../core/registries.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/checks.js",
+          "kind": "import-statement",
+          "original": "./checks.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/iso.js",
+          "kind": "import-statement",
+          "original": "./iso.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/schemas.js",
+          "kind": "import-statement",
+          "original": "./schemas.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/coerce.js": {
+      "bytes": 550,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/schemas.js",
+          "kind": "import-statement",
+          "original": "./schemas.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/v4/classic/external.js": {
+      "bytes": 907,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/schemas.js",
+          "kind": "import-statement",
+          "original": "./schemas.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/checks.js",
+          "kind": "import-statement",
+          "original": "./checks.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/errors.js",
+          "kind": "import-statement",
+          "original": "./errors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/parse.js",
+          "kind": "import-statement",
+          "original": "./parse.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/compat.js",
+          "kind": "import-statement",
+          "original": "./compat.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/en.js",
+          "kind": "import-statement",
+          "original": "../locales/en.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/index.js",
+          "kind": "import-statement",
+          "original": "../core/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/core/json-schema-processors.js",
+          "kind": "import-statement",
+          "original": "../core/json-schema-processors.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/from-json-schema.js",
+          "kind": "import-statement",
+          "original": "./from-json-schema.js"
+        },
+        {
+          "path": "node_modules/zod/v4/locales/index.js",
+          "kind": "import-statement",
+          "original": "../locales/index.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/iso.js",
+          "kind": "import-statement",
+          "original": "./iso.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/iso.js",
+          "kind": "import-statement",
+          "original": "./iso.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/coerce.js",
+          "kind": "import-statement",
+          "original": "./coerce.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/zod/index.js": {
+      "bytes": 121,
+      "imports": [
+        {
+          "path": "node_modules/zod/v4/classic/external.js",
+          "kind": "import-statement",
+          "original": "./v4/classic/external.js"
+        },
+        {
+          "path": "node_modules/zod/v4/classic/external.js",
+          "kind": "import-statement",
+          "original": "./v4/classic/external.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts": {
+      "bytes": 23140,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/known-event-types.ts": {
+      "bytes": 2727,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/surface.ts": {
+      "bytes": 30481,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/known-event-types.ts",
+          "kind": "import-statement",
+          "original": "./known-event-types.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/request-header.ts": {
+      "bytes": 2762,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/tool-history.ts": {
+      "bytes": 3762,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/repair.ts": {
+      "bytes": 8431,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/fork.ts": {
+      "bytes": 1397,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/repair.ts",
+          "kind": "import-statement",
+          "original": "./repair.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/preparation.ts": {
+      "bytes": 1610,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/seq-ranges.ts": {
+      "bytes": 2908,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts": {
+      "bytes": 60384,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/surface.ts",
+          "kind": "import-statement",
+          "original": "./surface.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/request-header.ts",
+          "kind": "import-statement",
+          "original": "./request-header.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/tool-history.ts",
+          "kind": "import-statement",
+          "original": "./tool-history.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/fork.ts",
+          "kind": "import-statement",
+          "original": "./fork.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/fork.ts",
+          "kind": "import-statement",
+          "original": "./fork.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts",
+          "kind": "import-statement",
+          "original": "./types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/preparation.ts",
+          "kind": "import-statement",
+          "original": "./preparation.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/repair.ts",
+          "kind": "import-statement",
+          "original": "./repair.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/surface.ts",
+          "kind": "import-statement",
+          "original": "./surface.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/request-header.ts",
+          "kind": "import-statement",
+          "original": "./request-header.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/known-event-types.ts",
+          "kind": "import-statement",
+          "original": "./known-event-types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/seq-ranges.ts",
+          "kind": "import-statement",
+          "original": "./seq-ranges.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/revision.ts": {
+      "bytes": 683,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/errors.ts": {
+      "bytes": 5827,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/storage-contract.ts": {
+      "bytes": 6252,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/index.ts": {
+      "bytes": 8388,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/revision.ts",
+          "kind": "import-statement",
+          "original": "./revision.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/errors.ts",
+          "kind": "import-statement",
+          "original": "./errors.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/storage-contract.ts",
+          "kind": "import-statement",
+          "original": "./storage-contract.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/system-prompt/src/index.ts": {
+      "bytes": 26532,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/inbox.ts": {
+      "bytes": 9327,
+      "imports": [
+        {
+          "path": "node_modules/zod/index.js",
+          "kind": "import-statement",
+          "original": "zod"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/runtime-context.ts": {
+      "bytes": 7184,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/assistant-stream.ts": {
+      "bytes": 4263,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts": {
+      "bytes": 26289,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/escalation.ts": {
+      "bytes": 10480,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/roots.ts": {
+      "bytes": 2745,
+      "imports": [
+        {
+          "path": "node:fs",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:os",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/diagnostics.ts": {
+      "bytes": 4608,
+      "imports": [
+        {
+          "path": "node:fs",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/index.ts": {
+      "bytes": 7966,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/escalation.ts",
+          "kind": "import-statement",
+          "original": "./escalation.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/roots.ts",
+          "kind": "import-statement",
+          "original": "./roots.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/diagnostics.ts",
+          "kind": "import-statement",
+          "original": "./diagnostics.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/schema.ts": {
+      "bytes": 26148,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts",
+          "kind": "import-statement",
+          "original": "./json-schema.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ptc.ts": {
+      "bytes": 38734,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-sandbox"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/schema.ts",
+          "kind": "import-statement",
+          "original": "./schema.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/index.ts",
+          "kind": "import-statement",
+          "original": "./index.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ts-types.ts": {
+      "bytes": 15001,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts",
+          "kind": "import-statement",
+          "original": "./json-schema.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/py-types.ts": {
+      "bytes": 47524,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts",
+          "kind": "import-statement",
+          "original": "./json-schema.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/testing.ts": {
+      "bytes": 1723,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/schema.ts",
+          "kind": "import-statement",
+          "original": "./schema.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/index.ts": {
+      "bytes": 90679,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts",
+          "kind": "import-statement",
+          "original": "./json-schema.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ptc.ts",
+          "kind": "import-statement",
+          "original": "./ptc.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ts-types.ts",
+          "kind": "import-statement",
+          "original": "./ts-types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/py-types.ts",
+          "kind": "import-statement",
+          "original": "./py-types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/schema.ts",
+          "kind": "import-statement",
+          "original": "./schema.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts",
+          "kind": "import-statement",
+          "original": "./json-schema.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ptc.ts",
+          "kind": "import-statement",
+          "original": "./ptc.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ts-types.ts",
+          "kind": "import-statement",
+          "original": "./ts-types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/py-types.ts",
+          "kind": "import-statement",
+          "original": "./py-types.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/testing.ts",
+          "kind": "import-statement",
+          "original": "./testing.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/tool-calls.ts": {
+      "bytes": 11511,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-tools"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/agent.ts": {
+      "bytes": 27350,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-agent"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/system-prompt/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-system-prompt"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/inbox.ts",
+          "kind": "import-statement",
+          "original": "./inbox.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/runtime-context.ts",
+          "kind": "import-statement",
+          "original": "./runtime-context.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/assistant-stream.ts",
+          "kind": "import-statement",
+          "original": "./assistant-stream.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/runtime-context.ts",
+          "kind": "import-statement",
+          "original": "./runtime-context.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/tool-calls.ts",
+          "kind": "import-statement",
+          "original": "./tool-calls.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/constants.ts": {
+      "bytes": 202,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/index.ts": {
+      "bytes": 37946,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "node_modules/zod/index.js",
+          "kind": "import-statement",
+          "original": "zod"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session-persistence"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/agent.ts",
+          "kind": "import-statement",
+          "original": "./agent.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/inbox.ts",
+          "kind": "import-statement",
+          "original": "./inbox.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/constants.ts",
+          "kind": "import-statement",
+          "original": "./constants.ts"
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-projection/src/index.ts": {
+      "bytes": 31464,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/transport.ts": {
+      "bytes": 9557,
+      "imports": [
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:string_decoder",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/index.ts": {
+      "bytes": 902,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/transport.ts",
+          "kind": "import-statement",
+          "original": "./transport.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/error.ts": {
+      "bytes": 3217,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/admission.ts": {
+      "bytes": 2980,
+      "imports": [
+        {
+          "path": "node:buffer",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/brand.ts": {
+      "bytes": 901,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/request-projection.ts": {
+      "bytes": 2461,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/index.ts": {
+      "bytes": 10840,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/admission.ts",
+          "kind": "import-statement",
+          "original": "./admission.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/brand.ts",
+          "kind": "import-statement",
+          "original": "./brand.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/error.ts",
+          "kind": "import-statement",
+          "original": "./error.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/admission.ts",
+          "kind": "import-statement",
+          "original": "./admission.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/request-projection.ts",
+          "kind": "import-statement",
+          "original": "./request-projection.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/launch-environment/src/index.ts": {
+      "bytes": 5637,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/defaults.ts": {
+      "bytes": 1398,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/models.ts": {
+      "bytes": 755,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/defaults.ts",
+          "kind": "import-statement",
+          "original": "./defaults.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/image-tokens.ts": {
+      "bytes": 7065,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-attachment"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-pricing.ts": {
+      "bytes": 5559,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-attachment"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/image-tokens.ts",
+          "kind": "import-statement",
+          "original": "./image-tokens.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/config.ts": {
+      "bytes": 18370,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cosmokit"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/timeout/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-timeout"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/models.ts",
+          "kind": "import-statement",
+          "original": "./models.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/defaults.ts",
+          "kind": "import-statement",
+          "original": "./defaults.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-pricing.ts",
+          "kind": "import-statement",
+          "original": "./request-pricing.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/model-info.ts": {
+      "bytes": 3552,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-id.ts": {
+      "bytes": 976,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/messages-api.ts": {
+      "bytes": 808,
+      "imports": [],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/files-api.ts": {
+      "bytes": 10880,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-id.ts",
+          "kind": "import-statement",
+          "original": "./file-id.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/messages-api.ts",
+          "kind": "import-statement",
+          "original": "./messages-api.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/atomic-write/src/index.ts": {
+      "bytes": 12030,
+      "imports": [
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:fs/promises",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/home-paths/src/index.ts": {
+      "bytes": 5434,
+      "imports": [
+        {
+          "path": "node:fs/promises",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:os",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/upload-index.ts": {
+      "bytes": 8976,
+      "imports": [
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:fs/promises",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/atomic-write/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-atomic-write"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/home-paths/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-home-paths"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-attachment"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-id.ts",
+          "kind": "import-statement",
+          "original": "./file-id.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-store.ts": {
+      "bytes": 12093,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/files-api.ts",
+          "kind": "import-statement",
+          "original": "./files-api.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/messages-api.ts",
+          "kind": "import-statement",
+          "original": "./messages-api.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/upload-index.ts",
+          "kind": "import-statement",
+          "original": "./upload-index.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-files.ts": {
+      "bytes": 6565,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/timeout/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-timeout"
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-extensions.ts": {
+      "bytes": 2468,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/images.ts": {
+      "bytes": 5872,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-pricing.ts",
+          "kind": "import-statement",
+          "original": "./request-pricing.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-pricing.ts",
+          "kind": "import-statement",
+          "original": "./request-pricing.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/replay.ts": {
+      "bytes": 3587,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/serialize.ts": {
+      "bytes": 9656,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/replay.ts",
+          "kind": "import-statement",
+          "original": "./replay.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "node_modules/eventsource-parser/dist/index.js": {
+      "bytes": 7814,
+      "imports": [],
+      "format": "esm"
+    },
+    "node_modules/eventsource-parser/dist/stream.js": {
+      "bytes": 825,
+      "imports": [
+        {
+          "path": "node_modules/eventsource-parser/dist/index.js",
+          "kind": "import-statement",
+          "original": "./index.js"
+        },
+        {
+          "path": "node_modules/eventsource-parser/dist/index.js",
+          "kind": "import-statement",
+          "original": "./index.js"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/transport.ts": {
+      "bytes": 2924,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/sse.ts": {
+      "bytes": 1403,
+      "imports": [
+        {
+          "path": "node_modules/eventsource-parser/dist/stream.js",
+          "kind": "import-statement",
+          "original": "eventsource-parser/stream"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/replay.ts",
+          "kind": "import-statement",
+          "original": "./replay.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/transport.ts",
+          "kind": "import-statement",
+          "original": "./transport.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/translate.ts": {
+      "bytes": 8030,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/replay.ts",
+          "kind": "import-statement",
+          "original": "./replay.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/adapter.ts": {
+      "bytes": 8341,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/timeout/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-timeout"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/model-info.ts",
+          "kind": "import-statement",
+          "original": "./model-info.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-store.ts",
+          "kind": "import-statement",
+          "original": "./file-store.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/messages-api.ts",
+          "kind": "import-statement",
+          "original": "./messages-api.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-files.ts",
+          "kind": "import-statement",
+          "original": "./request-files.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-extensions.ts",
+          "kind": "import-statement",
+          "original": "./request-extensions.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/images.ts",
+          "kind": "import-statement",
+          "original": "./images.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/serialize.ts",
+          "kind": "import-statement",
+          "original": "./serialize.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/sse.ts",
+          "kind": "import-statement",
+          "original": "./sse.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/translate.ts",
+          "kind": "import-statement",
+          "original": "./translate.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/transport.ts",
+          "kind": "import-statement",
+          "original": "./transport.ts"
+        },
+        {
+          "path": "<runtime>",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/identity/anonymous-user-id/src/index.ts": {
+      "bytes": 4331,
+      "imports": [
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:fs",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/home-paths/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-home-paths"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/host.ts": {
+      "bytes": 2775,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/identity/anonymous-user-id/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-anonymous-user-id"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-util-values"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/adapter.ts",
+          "kind": "import-statement",
+          "original": "./adapter.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/index.ts": {
+      "bytes": 2080,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/config.ts",
+          "kind": "import-statement",
+          "original": "./config.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/defaults.ts",
+          "kind": "import-statement",
+          "original": "./defaults.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/adapter.ts",
+          "kind": "import-statement",
+          "original": "./adapter.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-pricing.ts",
+          "kind": "import-statement",
+          "original": "./request-pricing.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/image-tokens.ts",
+          "kind": "import-statement",
+          "original": "./image-tokens.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-store.ts",
+          "kind": "import-statement",
+          "original": "./file-store.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/files-api.ts",
+          "kind": "import-statement",
+          "original": "./files-api.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-id.ts",
+          "kind": "import-statement",
+          "original": "./file-id.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/upload-index.ts",
+          "kind": "import-statement",
+          "original": "./upload-index.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/model-info.ts",
+          "kind": "import-statement",
+          "original": "./model-info.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/host.ts",
+          "kind": "import-statement",
+          "original": "./host.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/credentials/credentials/src/index.ts": {
+      "bytes": 13395,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/config.ts": {
+      "bytes": 2153,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/credentials/credentials/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-credentials"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm-deepseek"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/index.ts": {
+      "bytes": 2314,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/launch-environment/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-launch-environment"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm-deepseek"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/config.ts",
+          "kind": "import-statement",
+          "original": "./config.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/config.ts",
+          "kind": "import-statement",
+          "original": "./config.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/server.ts": {
+      "bytes": 12621,
+      "imports": [
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-brand"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-attachment"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-scope"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm-deepseek-api-key"
+        }
+      ],
+      "format": "esm"
+    },
+    "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/index.ts": {
+      "bytes": 4443,
+      "imports": [
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/schemastery"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-sdk-protocol"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/server.ts",
+          "kind": "import-statement",
+          "original": "./server.ts"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/server.ts",
+          "kind": "import-statement",
+          "original": "./server.ts"
+        }
+      ],
+      "format": "esm"
+    },
+    "../deepseek/entry.ts": {
+      "bytes": 4667,
+      "imports": [
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/cordis"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-llm"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-agent"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-agent-loop"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-projection/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-session-projection"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/system-prompt/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-system-prompt"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-tools"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-sdk-protocol"
+        },
+        {
+          "path": "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/index.ts",
+          "kind": "import-statement",
+          "original": "@deepseek-ai/dsh-sdk-jsonrpc-server"
+        }
+      ],
+      "format": "esm"
+    }
+  },
+  "outputs": {
+    "../deepseek/runtime.mjs": {
+      "imports": [
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:async_hooks",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:util/types",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:string_decoder",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:buffer",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:fs/promises",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:fs/promises",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:os",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:crypto",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:fs",
+          "kind": "import-statement",
+          "external": true
+        },
+        {
+          "path": "node:path",
+          "kind": "import-statement",
+          "external": true
+        }
+      ],
+      "exports": [],
+      "entryPoint": "../deepseek/entry.ts",
+      "inputs": {
+        "../deepseek/entry.ts": {
+          "bytesInOutput": 3974
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/misc.ts": {
+          "bytesInOutput": 822
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/volatile.ts": {
+          "bytesInOutput": 1170
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/types.ts": {
+          "bytesInOutput": 5069
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/string.ts": {
+          "bytesInOutput": 1026
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cosmokit/src/time.ts": {
+          "bytesInOutput": 3341
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/utils.ts": {
+          "bytesInOutput": 8104
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/events.ts": {
+          "bytesInOutput": 6625
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/logger.ts": {
+          "bytesInOutput": 5778
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/fiber.ts": {
+          "bytesInOutput": 17342
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/reflect.ts": {
+          "bytesInOutput": 10419
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/registry.ts": {
+          "bytesInOutput": 6057
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/context.ts": {
+          "bytesInOutput": 3631
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/cordis/src/service.ts": {
+          "bytesInOutput": 3550
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/remote-error.ts": {
+          "bytesInOutput": 636
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/typert/protocol/src/index.ts": {
+          "bytesInOutput": 5022
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/values/src/index.ts": {
+          "bytesInOutput": 6295
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/crypto/src/index.ts": {
+          "bytesInOutput": 416
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/brand/src/index.ts": {
+          "bytesInOutput": 96
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/message.ts": {
+          "bytesInOutput": 1020
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/vendor/schemastery/src/index.ts": {
+          "bytesInOutput": 24622
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/timeout/src/index.ts": {
+          "bytesInOutput": 2740
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/error.ts": {
+          "bytesInOutput": 3150
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/retry-policy.ts": {
+          "bytesInOutput": 4347
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/call-config.ts": {
+          "bytesInOutput": 528
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/adapter-failure.ts": {
+          "bytesInOutput": 2725
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/api-key.ts": {
+          "bytesInOutput": 280
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/content.ts": {
+          "bytesInOutput": 9707
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/attribution.ts": {
+          "bytesInOutput": 394
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/index.ts": {
+          "bytesInOutput": 35396
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/brand.ts": {
+          "bytesInOutput": 232
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assembler.ts": {
+          "bytesInOutput": 5818
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm/src/assistant-stream.ts": {
+          "bytesInOutput": 4460
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/index.ts": {
+          "bytesInOutput": 16594
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/store.ts": {
+          "bytesInOutput": 5923
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/scope/src/index.ts": {
+          "bytesInOutput": 2161
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/archive-admission.ts": {
+          "bytesInOutput": 487
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent/src/dispatch.ts": {
+          "bytesInOutput": 1469
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/index.ts": {
+          "bytesInOutput": 25261
+        },
+        "node_modules/zod/v4/classic/external.js": {
+          "bytesInOutput": 6911
+        },
+        "node_modules/zod/v4/core/index.js": {
+          "bytesInOutput": 8868
+        },
+        "node_modules/zod/v4/core/core.js": {
+          "bytesInOutput": 2091
+        },
+        "node_modules/zod/v4/core/util.js": {
+          "bytesInOutput": 19862
+        },
+        "node_modules/zod/v4/core/errors.js": {
+          "bytesInOutput": 4669
+        },
+        "node_modules/zod/v4/core/parse.js": {
+          "bytesInOutput": 3814
+        },
+        "node_modules/zod/v4/core/regexes.js": {
+          "bytesInOutput": 7522
+        },
+        "node_modules/zod/v4/core/checks.js": {
+          "bytesInOutput": 16315
+        },
+        "node_modules/zod/v4/core/doc.js": {
+          "bytesInOutput": 924
+        },
+        "node_modules/zod/v4/core/versions.js": {
+          "bytesInOutput": 55
+        },
+        "node_modules/zod/v4/core/schemas.js": {
+          "bytesInOutput": 65921
+        },
+        "node_modules/zod/v4/locales/index.js": {
+          "bytesInOutput": 1322
+        },
+        "node_modules/zod/v4/locales/ar.js": {
+          "bytesInOutput": 7121
+        },
+        "node_modules/zod/v4/locales/az.js": {
+          "bytesInOutput": 4340
+        },
+        "node_modules/zod/v4/locales/be.js": {
+          "bytesInOutput": 8702
+        },
+        "node_modules/zod/v4/locales/bg.js": {
+          "bytesInOutput": 7825
+        },
+        "node_modules/zod/v4/locales/ca.js": {
+          "bytesInOutput": 4154
+        },
+        "node_modules/zod/v4/locales/cs.js": {
+          "bytesInOutput": 4466
+        },
+        "node_modules/zod/v4/locales/da.js": {
+          "bytesInOutput": 4171
+        },
+        "node_modules/zod/v4/locales/de.js": {
+          "bytesInOutput": 4003
+        },
+        "node_modules/zod/v4/locales/el.js": {
+          "bytesInOutput": 7983
+        },
+        "node_modules/zod/v4/locales/en.js": {
+          "bytesInOutput": 4077
+        },
+        "node_modules/zod/v4/locales/eo.js": {
+          "bytesInOutput": 4043
+        },
+        "node_modules/zod/v4/locales/es.js": {
+          "bytesInOutput": 4783
+        },
+        "node_modules/zod/v4/locales/fa.js": {
+          "bytesInOutput": 6726
+        },
+        "node_modules/zod/v4/locales/fi.js": {
+          "bytesInOutput": 4247
+        },
+        "node_modules/zod/v4/locales/fr.js": {
+          "bytesInOutput": 4525
+        },
+        "node_modules/zod/v4/locales/fr-CA.js": {
+          "bytesInOutput": 3999
+        },
+        "node_modules/zod/v4/locales/he.js": {
+          "bytesInOutput": 13032
+        },
+        "node_modules/zod/v4/locales/hr.js": {
+          "bytesInOutput": 4429
+        },
+        "node_modules/zod/v4/locales/hu.js": {
+          "bytesInOutput": 4279
+        },
+        "node_modules/zod/v4/locales/hy.js": {
+          "bytesInOutput": 8264
+        },
+        "node_modules/zod/v4/locales/id.js": {
+          "bytesInOutput": 3964
+        },
+        "node_modules/zod/v4/locales/is.js": {
+          "bytesInOutput": 4144
+        },
+        "node_modules/zod/v4/locales/it.js": {
+          "bytesInOutput": 3962
+        },
+        "node_modules/zod/v4/locales/ja.js": {
+          "bytesInOutput": 5348
+        },
+        "node_modules/zod/v4/locales/ka.js": {
+          "bytesInOutput": 7817
+        },
+        "node_modules/zod/v4/locales/km.js": {
+          "bytesInOutput": 8032
+        },
+        "node_modules/zod/v4/locales/kh.js": {
+          "bytesInOutput": 49
+        },
+        "node_modules/zod/v4/locales/ko.js": {
+          "bytesInOutput": 5145
+        },
+        "node_modules/zod/v4/locales/lt.js": {
+          "bytesInOutput": 7198
+        },
+        "node_modules/zod/v4/locales/mk.js": {
+          "bytesInOutput": 7000
+        },
+        "node_modules/zod/v4/locales/ms.js": {
+          "bytesInOutput": 3873
+        },
+        "node_modules/zod/v4/locales/nl.js": {
+          "bytesInOutput": 4129
+        },
+        "node_modules/zod/v4/locales/no.js": {
+          "bytesInOutput": 3925
+        },
+        "node_modules/zod/v4/locales/ota.js": {
+          "bytesInOutput": 4143
+        },
+        "node_modules/zod/v4/locales/ps.js": {
+          "bytesInOutput": 6076
+        },
+        "node_modules/zod/v4/locales/pl.js": {
+          "bytesInOutput": 4655
+        },
+        "node_modules/zod/v4/locales/pt.js": {
+          "bytesInOutput": 4004
+        },
+        "node_modules/zod/v4/locales/ro.js": {
+          "bytesInOutput": 4366
+        },
+        "node_modules/zod/v4/locales/ru.js": {
+          "bytesInOutput": 8988
+        },
+        "node_modules/zod/v4/locales/sl.js": {
+          "bytesInOutput": 4022
+        },
+        "node_modules/zod/v4/locales/sv.js": {
+          "bytesInOutput": 4120
+        },
+        "node_modules/zod/v4/locales/ta.js": {
+          "bytesInOutput": 8172
+        },
+        "node_modules/zod/v4/locales/th.js": {
+          "bytesInOutput": 8107
+        },
+        "node_modules/zod/v4/locales/tr.js": {
+          "bytesInOutput": 4081
+        },
+        "node_modules/zod/v4/locales/uk.js": {
+          "bytesInOutput": 7877
+        },
+        "node_modules/zod/v4/locales/ua.js": {
+          "bytesInOutput": 49
+        },
+        "node_modules/zod/v4/locales/ur.js": {
+          "bytesInOutput": 7394
+        },
+        "node_modules/zod/v4/locales/uz.js": {
+          "bytesInOutput": 4218
+        },
+        "node_modules/zod/v4/locales/vi.js": {
+          "bytesInOutput": 4665
+        },
+        "node_modules/zod/v4/locales/zh-CN.js": {
+          "bytesInOutput": 4504
+        },
+        "node_modules/zod/v4/locales/zh-TW.js": {
+          "bytesInOutput": 4609
+        },
+        "node_modules/zod/v4/locales/yo.js": {
+          "bytesInOutput": 4784
+        },
+        "node_modules/zod/v4/core/registries.js": {
+          "bytesInOutput": 1330
+        },
+        "node_modules/zod/v4/core/api.js": {
+          "bytesInOutput": 22905
+        },
+        "node_modules/zod/v4/core/to-json-schema.js": {
+          "bytesInOutput": 11443
+        },
+        "node_modules/zod/v4/core/json-schema-processors.js": {
+          "bytesInOutput": 17004
+        },
+        "node_modules/zod/v4/core/json-schema-generator.js": {
+          "bytesInOutput": 2119
+        },
+        "node_modules/zod/v4/core/json-schema.js": {
+          "bytesInOutput": 30
+        },
+        "node_modules/zod/v4/classic/schemas.js": {
+          "bytesInOutput": 45517
+        },
+        "node_modules/zod/v4/classic/checks.js": {
+          "bytesInOutput": 858
+        },
+        "node_modules/zod/v4/classic/iso.js": {
+          "bytesInOutput": 1193
+        },
+        "node_modules/zod/v4/classic/errors.js": {
+          "bytesInOutput": 1023
+        },
+        "node_modules/zod/v4/classic/parse.js": {
+          "bytesInOutput": 736
+        },
+        "node_modules/zod/v4/classic/compat.js": {
+          "bytesInOutput": 641
+        },
+        "node_modules/zod/v4/classic/from-json-schema.js": {
+          "bytesInOutput": 16515
+        },
+        "node_modules/zod/v4/classic/coerce.js": {
+          "bytesInOutput": 540
+        },
+        "node_modules/zod/index.js": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/index.ts": {
+          "bytesInOutput": 44071
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/types.ts": {
+          "bytesInOutput": 516
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/known-event-types.ts": {
+          "bytesInOutput": 1464
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/surface.ts": {
+          "bytesInOutput": 18162
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/request-header.ts": {
+          "bytesInOutput": 992
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/tool-history.ts": {
+          "bytesInOutput": 3000
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/repair.ts": {
+          "bytesInOutput": 4023
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/fork.ts": {
+          "bytesInOutput": 426
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/session/src/preparation.ts": {
+          "bytesInOutput": 794
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-persistence/src/errors.ts": {
+          "bytesInOutput": 298
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/system-prompt/src/index.ts": {
+          "bytesInOutput": 15124
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/inbox.ts": {
+          "bytesInOutput": 7476
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/runtime-context.ts": {
+          "bytesInOutput": 4138
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/assistant-stream.ts": {
+          "bytesInOutput": 3311
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/json-schema.ts": {
+          "bytesInOutput": 17524
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/escalation.ts": {
+          "bytesInOutput": 2599
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sandbox/sandbox/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/schema.ts": {
+          "bytesInOutput": 10529
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ptc.ts": {
+          "bytesInOutput": 21447
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/ts-types.ts": {
+          "bytesInOutput": 9921
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/py-types.ts": {
+          "bytesInOutput": 12396
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/tools/src/index.ts": {
+          "bytesInOutput": 50793
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/tool-calls.ts": {
+          "bytesInOutput": 6082
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/agent.ts": {
+          "bytesInOutput": 20980
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/core/agent-loop/src/constants.ts": {
+          "bytesInOutput": 42
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/session/session-projection/src/index.ts": {
+          "bytesInOutput": 18956
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/transport.ts": {
+          "bytesInOutput": 6807
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/protocol/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/server.ts": {
+          "bytesInOutput": 8548
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/admission.ts": {
+          "bytesInOutput": 840
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/error.ts": {
+          "bytesInOutput": 1125
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/brand.ts": {
+          "bytesInOutput": 51
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/attachment/attachment/src/request-projection.ts": {
+          "bytesInOutput": 1339
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/index.ts": {
+          "bytesInOutput": 1772
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/launch-environment/src/index.ts": {
+          "bytesInOutput": 1199
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/defaults.ts": {
+          "bytesInOutput": 529
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/models.ts": {
+          "bytesInOutput": 493
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/image-tokens.ts": {
+          "bytesInOutput": 3969
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-pricing.ts": {
+          "bytesInOutput": 1814
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/config.ts": {
+          "bytesInOutput": 12861
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/index.ts": {
+          "bytesInOutput": 0
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/model-info.ts": {
+          "bytesInOutput": 2530
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-id.ts": {
+          "bytesInOutput": 101
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/messages-api.ts": {
+          "bytesInOutput": 281
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/files-api.ts": {
+          "bytesInOutput": 7758
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/upload-index.ts": {
+          "bytesInOutput": 6503
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/atomic-write/src/index.ts": {
+          "bytesInOutput": 4235
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/util/home-paths/src/index.ts": {
+          "bytesInOutput": 753
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/file-store.ts": {
+          "bytesInOutput": 9128
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-files.ts": {
+          "bytesInOutput": 5500
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/request-extensions.ts": {
+          "bytesInOutput": 1069
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/images.ts": {
+          "bytesInOutput": 2861
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/replay.ts": {
+          "bytesInOutput": 1990
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/serialize.ts": {
+          "bytesInOutput": 7243
+        },
+        "node_modules/eventsource-parser/dist/index.js": {
+          "bytesInOutput": 7770
+        },
+        "node_modules/eventsource-parser/dist/stream.js": {
+          "bytesInOutput": 669
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/transport.ts": {
+          "bytesInOutput": 2027
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/sse.ts": {
+          "bytesInOutput": 735
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/translate.ts": {
+          "bytesInOutput": 6690
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/adapter.ts": {
+          "bytesInOutput": 6837
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/identity/anonymous-user-id/src/index.ts": {
+          "bytesInOutput": 1371
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek/src/host.ts": {
+          "bytesInOutput": 1721
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/credentials/credentials/src/index.ts": {
+          "bytesInOutput": 312
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/llm/llm-deepseek-api-key/src/config.ts": {
+          "bytesInOutput": 459
+        },
+        "../../../../../../../_ai/openAI/2026-09-27/mak/work/upstream/deepseek/packages/sdk/server/src/index.ts": {
+          "bytesInOutput": 98
+        }
+      },
+      "bytes": 1191340
+    }
+  }
+}

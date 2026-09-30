@@ -1,0 +1,43 @@
+{
+  "packageKind": "ai-harness",
+  "main": "src/harness.ts",
+  "icon": "smart_toy",
+  "settingsSchema": [
+    {
+      "key": "answerStyle",
+      "label": "Answer style",
+      "description": "Expected final-answer density.",
+      "type": "select",
+      "default": "concise",
+      "options": [
+        { "value": "concise", "label": "Concise" },
+        { "value": "detailed", "label": "Detailed" }
+      ]
+    },
+    {
+      "key": "maxAnswerCharacters",
+      "label": "Maximum answer characters",
+      "type": "number",
+      "default": 700,
+      "min": 100,
+      "max": 4000,
+      "step": 100
+    }
+  ],
+  "execution": {
+    "timeoutMs": 45000,
+    "memoryMb": 96,
+    "maxResponseBytes": 1048576,
+    "maxTurns": 8,
+    "maxConcurrency": 3
+  },
+  "retry": {
+    "maxAttempts": 4,
+    "baseDelayMs": 750,
+    "maxDelayMs": 15000
+  },
+  "cache": {
+    "maxAgeDays": 14,
+    "maxSizeMb": 256
+  }
+}
