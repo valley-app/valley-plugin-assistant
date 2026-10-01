@@ -31,6 +31,7 @@
 - Subscription usage belongs in its own speedometer Properties tab beside Info and Conversation, never inside the Conversation form. Register it only while the optional monitor is enabled and remove it immediately on disable.
 
 - Left-sidebar conversation previews render Markdown through the injected host renderer, preserving compact inline emphasis and code inside the two-line clamp. Keep the entire row as the chat-opening action; omit embedded media and interactive Markdown controls from previews.
+- Chat-row keyboard outlines enclose the complete row, including its action button. Parse complete message Markdown before visually clamping previews; preserve KaTeX layout and fonts, bold, italics and highlights without adding independently scrolling or delayed preview overlays.
 
 - Keep left-sidebar chat rows dense: 4px vertical and 10px horizontal content padding, including project rows and Show more. Preserve the 2px separation between hover backgrounds and the 6px right action inset; Markdown previews add only a 1px title gap.
 
@@ -93,3 +94,35 @@
 - Put standalone native dropdowns and number fields inside settings-row-control wrappers. Do not override sandbox widget placeholder flex bases or widths: this can make host controls overlap labels. Verify the exact final deployed bundle at both widths after every layout correction; earlier screenshots do not validate a later patch.
 
 - Keep Evaluations out of the left Settings navigation; preserve its packages, histories, and backend capabilities.
+
+- Assistant errors use compact, themed alerts with a clear title and actionable message. Strip repeated Error/IPC wrappers, explain missing credentials at the connection, and never show duplicate raw transport errors.
+
+- Message text and its rows scroll together in a shared host ScrollPanel. Collapsed work details unmount Markdown widgets; verify collapse, fast scrolling, growing output and jump-to-latest in the installed app. Never animate message position across the sandbox boundary.
+- Connection forms have one green Save action beneath the fields, with saved feedback and red error text at the bottom; never put feedback above the connection heading.
+
+- Generate chat names with the model selected for the active conversation, using two to four words and at most 40 characters. Center the title in the pane header, preserve manual titles, and explain Vault only restrictions accurately instead of claiming Full access tools do not exist.
+
+- Chat failures render as an Error box with a concise explanation and collapsed technical details. Normalize stored message errors too, and strip tool-registry metadata before forwarding tool definitions to the shared AI API.
+
+- Project settings show a clear folder section and an inline shared-instructions editor, with one bottom Save action. Keep source-note details and deletion collapsed under Manage project; visually exercise the final installed form.
+
+- Stopped status belongs beside the most recent work duration, with a compact composer status only when there is no work row. Markdown wheel input must scroll the conversation natively when hovering text or links, in both directions.
+- Stop feedback belongs to the current turn only; when it has no work row, show the composer status instead of labeling a previous completed turn.
+
+- Verify Telegram with a real inbound message and accepted reply, including recovery after a failed or stopped turn. A new authenticated message must not stay trapped in a paused queue; /clear supersedes queued earlier messages without replaying interrupted tools.
+
+- Keep independent chats running when navigating between them; Stop cancels only its conversation. Verify concurrent real model replies. Runtime text events are full snapshots, never append them; reconcile the final completion if streamed events are missing, and never silently finish with an empty reply.
+- Conversation and channel-delivery errors stay scoped to their conversation, including restored failed sessions; never promote a background chat failure into a global chat alert.
+- Channel final answers are delivered automatically once. Keep receipt IDs and delivery confirmations out of ordinary replies; /start welcomes the user without resetting their history.
+- Assistant Footer details uses the shared selectable, reorderable provider. Status follows the selected conversation's real execution state, including Thinking, Writing, Working, Finished, Stopped and Error; keep model selection, message/queue counts and running-chat count optional.
+
+- Voice orbs keep gentle motion in every visible state and stronger flowing motion while thinking. Keep their center and canvas footprint fixed, blend state changes, honor reduced motion, and stop animation when hidden or unmounted.
+
+- Chat-row three-dot buttons use equal 6px top and right insets from the row background, including preview rows; keep the entire action hit area inside that spacing.
+
+- Composer access, effort and model menus declare their own host-widget occlusion bounds and use an opaque theme surface. Verify that Markdown text and copy controls cannot paint over the open menus, and reappear after dismissal, in the installed development app.
+
+- A fresh typed message recovers a failed or stopped chat just like voice and authenticated channel input. Clear the current failure and start the new turn without replaying the failed turn, including while its final save is still pending; opening a chat alone must not resume it.
+
+- The right-sidebar Assistant is self-contained: mobile-style Chat/Telegram/WhatsApp navigation, searchable chat/project lists, conversation, voice and conversation settings stay inside the sidebar. Opening or creating a chat there never switches the main workspace; retain drafts and list state when going back.
+- Right-sidebar Chat, Telegram and WhatsApp are icon buttons in the persistent top header beside Voice, matching the left-sidebar controls. Never place them in bottom tabs; keep them available in the list, conversation and settings screens.

@@ -6,6 +6,7 @@ import { bytesToHex } from '@noble/hashes/utils.js'
 import * as fs from '../filesystem'
 import { backendApi } from '../runtime'
 import { assistantDir } from '../paths'
+import { readDocument, writeDocument, type ConfigurationApi } from './documents'
 
 export const NOTE_LIMIT = 64 * 1024
 export const utf8Size = (text: string): number => new TextEncoder().encode(text).length
@@ -49,20 +50,19 @@ export function noteReference(reference: string, parent = ''): string {
   return result
 }
 
-export async function readOptional(file: string): Promise<string | null> {
-  try { return await fs.readFile(file, 'utf8') }
+export async function readOptional(file: string, api: ConfigurationApi = backendApi()): Promise<string | null> {
+  try { return await fs.readFile(file, 'utf8', api) }
   catch (error) { if ((error as { code?: string }).code === 'ENOENT') return null; throw error }
 }
 
-export async function readInstructionNote(root: string, reference: string): Promise<string> {
+export async function readInstructionNote(root: string, reference: string, api: ConfigurationApi = backendApi()): Promise<string> {
   const relative = noteReference(reference)
   if (relative.startsWith('.valley/plugins/data/assistant/')) {
-    const result = await fs.stat(path.join(root, relative))
+    const result = await fs.stat(path.join(root, relative), api)
     if (!result.isFile() || result.size > NOTE_LIMIT) throw new Error(`${relative}: expected a Markdown file of at most ${NOTE_LIMIT} bytes`)
-    return fs.readFile(path.join(root, relative), 'utf8')
+    return fs.readFile(path.join(root, relative), 'utf8', api)
   }
-  await checkInstructionAccess(relative)
-  const api = backendApi()
+  await checkInstructionAccess(relative, api)
   const grant = await api.storage.open({ area: 'vault', path: relative, kind: 'file', mode: 'read' })
   try {
     const location = { handle: grant.handle, path: '' }
@@ -74,31 +74,52 @@ export async function readInstructionNote(root: string, reference: string): Prom
   } finally { await api.storage.close(grant.handle) }
 }
 
-export async function checkInstructionAccess(reference: string): Promise<void> {
+export async function readInstructionDocument(root: string, reference: string, api: ConfigurationApi = backendApi()): Promise<{ content: string; revision: number }> {
   const relative = noteReference(reference)
-  if (!relative.startsWith('.valley/plugins/data/assistant/')) await backendApi().policy.checkFile(relative, 'read')
+  if (relative.startsWith('.valley/plugins/data/assistant/')) return readDocument(path.join(root, relative), api)
+  await checkInstructionAccess(relative, api)
+  const grant = await api.storage.open({ area: 'vault', path: relative, kind: 'file', mode: 'read' })
+  try { return await api.storage.readDocument({ handle: grant.handle, path: '' }) } finally { await api.storage.close(grant.handle) }
+}
+
+export async function writeInstructionDocument(root: string, reference: string, content: string, expectedRevision: number, api: ConfigurationApi = backendApi()): Promise<{ revision: number }> {
+  const relative = noteReference(reference)
+  if (relative.startsWith('.valley/plugins/data/assistant/')) return writeDocument(path.join(root, relative), content, expectedRevision, api)
+  await api.policy.checkFile(relative, 'write')
+  const grant = await api.storage.open({ area: 'vault', path: relative, kind: 'file', mode: 'write' })
+  try { return await api.storage.writeDocument({ handle: grant.handle, path: '' }, { content, expectedRevision }) } finally { await api.storage.close(grant.handle) }
+}
+
+export async function checkInstructionAccess(reference: string, api: ConfigurationApi = backendApi()): Promise<void> {
+  const relative = noteReference(reference)
+  if (!relative.startsWith('.valley/plugins/data/assistant/')) await api.policy.checkFile(relative, 'read')
 }
 
 export const relativeAssistantNote = (name: string): string => `.valley/plugins/data/assistant/${name}`
 export const configurationPath = (root: string, name: string): string => path.join(assistantDir(root), name)
 
-export async function trySeed(file: string, content: string): Promise<boolean> {
-  try { await fs.atomicWriteFile(file, content); return true }
+export async function trySeed(file: string, content: string, api: ConfigurationApi = backendApi()): Promise<boolean> {
+  try {
+    const current = await readDocument(file, api)
+    if (current.content) return false
+    await writeDocument(file, content, current.revision, api)
+    return true
+  }
   catch (error) {
     const { reportConfigurationError } = await import('./settings')
-    reportConfigurationError(file, error, false)
+    reportConfigurationError(file, error, false, api)
     return false
   }
 }
 
-export async function writeSnapshot(file: string, value: unknown): Promise<void> {
+export async function writeSnapshot(file: string, value: unknown, api: ConfigurationApi = backendApi()): Promise<void> {
   const { runExclusive } = await import('../fileQueue')
   const { clearConfigurationError, reportConfigurationError } = await import('./settings')
   try {
     await runExclusive(file, async () => {
       const content = JSON.stringify(value, null, 2)
-      if (await readOptional(file) !== content) await fs.atomicWriteFile(file, content)
-    })
+      if (await readOptional(file, api) !== content) await fs.atomicWriteFile(file, content, api)
+    }, api)
     clearConfigurationError(file)
-  } catch (error) { reportConfigurationError(file, error, false) }
+  } catch (error) { reportConfigurationError(file, error, false, api) }
 }

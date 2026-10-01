@@ -252,7 +252,7 @@ export type HarnessId = 'valley' | 'deepseek' | 'openai-modified'
 export interface AssistantConfig {
   defaultHarness?: HarnessId
     instructions: string
-    rules: { name: string; content: string }[]
+    rules: { name: string; content: string; configurationRevision?: number }[]
   routing: RoutingConfig
     guard: GuardPolicy
     providers: AiProviderStatus[]
@@ -262,6 +262,7 @@ export interface AssistantConfig {
 export type AiChatSource = 'telegram' | 'whatsapp'
 
 export interface AssistantProject {
+  configurationRevision?: number
   deleting?: boolean
   id: string
   name: string
@@ -278,6 +279,7 @@ export interface PendingMessage {
 }
 
 export interface AiChatThread {
+  configurationRevision?: number
   channelSenderId?: string
   channelTopicId?: string
   channelChatType?: import('./contracts/channel').MessageDestination['chatType']
@@ -329,6 +331,8 @@ export interface AiChatSummary {
 }
 
 export interface AiPersonality {
+  configurationRevisions?: Record<string, number>
+  configurationRevision?: number
   id: string
   name: string
     isDefault: boolean
@@ -349,6 +353,8 @@ export interface AiMemoryEntry {
 export type ChannelId = string
 
 export interface ChannelInfo {
+  configurationApplication?: { state: 'deferred'; reason: string }
+  configurationRevisions?: Record<string, number>
   defaultHarness?: HarnessId
   id: ChannelId
     type: string
@@ -373,6 +379,7 @@ export interface ChannelInfo {
 }
 
 export interface ChannelsInfo {
+  configurationRevisions?: Record<string, number>
   channels: ChannelInfo[]
 }
 

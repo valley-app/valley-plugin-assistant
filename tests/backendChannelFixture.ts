@@ -54,7 +54,7 @@ export function createBackendChannelFixture(data = datasetFixture()) {
   const api = {
     data, rpc: { emit }, ai: { complete: vi.fn(), speech: { synthesize: vi.fn() } },
     policy: { read: vi.fn(async () => ({ defaultWrite: { decision: 'confirm' }, tools: {}, commands: {}, files: { visitMode: 'allow-listed-only', defaultRead: { decision: 'allow' }, defaultWrite: { decision: 'confirm' }, allowedToVisit: ['**/*.md'], allowedToWrite: ['**/*.md'], blocked: [], readOverrides: {}, writeOverrides: {} }, dangerousMode: { enabled: false, scope: 'off' }, pluginPresets: {} })) },
-    agent: { begin: vi.fn(async () => ({ scopeId: 'scope' })), commands: vi.fn(async () => []), close: vi.fn(async () => {}), invoke: vi.fn(async () => {}), onState: vi.fn(() => () => {}), resume: vi.fn(async () => {}) },
+    agent: { begin: vi.fn(async () => ({ scopeId: 'scope' })), commands: vi.fn(async () => []), catalog: vi.fn(async () => ({ commands: [], total: 0 })), describe: vi.fn(async () => { throw new Error('Command unavailable') }), close: vi.fn(async () => {}), invoke: vi.fn(async () => {}), onState: vi.fn(() => () => {}), resume: vi.fn(async () => {}) },
     files: { release: vi.fn(async () => {}) }
   } as unknown as PluginBackendApi
   initBackend(api)

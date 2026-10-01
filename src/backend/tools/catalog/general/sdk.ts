@@ -719,17 +719,17 @@ export function buildTools(api: ValleyPluginApi, getFilesPolicy?: () => GuardFil
         const res = await api.assistant.getConfig()
         const cfg = res.data
         if (!cfg) return 'No config.'
-        const rules = cfg.rules.map((r) => `### rule: ${r.name}\n${r.content}`).join('\n\n')
+        const rules = cfg.rules.map((r) => `### rule: ${r.name} (revision ${r.configurationRevision})\n${r.content}`).join('\n\n')
         return { text: clip(`# instructions\n${cfg.instructions}\n\n${rules}`), output: `# instructions\n${cfg.instructions}\n\n${rules}` }
       }
     },
     {
       name: 'write_rule',
       description: 'Create or update one of your own rule files (rules/<name>.md).',
-      parameters: obj({ name: S('Rule name (no slashes)'), content: S('Markdown content') }, ['name', 'content']),
+      parameters: obj({ name: S('Rule name (no slashes)'), content: S('Markdown content'), expectedRevision: { type: 'integer', minimum: 0, description: 'Revision returned by get_config; 0 only for a new rule.' } }, ['name', 'content', 'expectedRevision']),
       sideEffect: 'write',
       run: async (a) => {
-        const res = await api.assistant.writeRule(str(a.name), str(a.content))
+        const res = await api.assistant.writeRule(str(a.name), str(a.content), typeof a.expectedRevision === 'number' ? a.expectedRevision : undefined)
         return res.ok ? `Saved rule "${str(a.name)}".` : `Failed: ${res.error}`
       }
     },

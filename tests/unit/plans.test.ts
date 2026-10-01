@@ -38,10 +38,10 @@ describe('immutable plan approval', () => {
   it('binds every artifact and recompiles the same voice guidance with current channel links', async () => {
     const { service, thread, expected } = await setup()
     await expect(service.validate(thread, expected)).resolves.toMatchObject({ artifactHash: planHash(files) })
-    expect(state.compile).toHaveBeenLastCalledWith('/vault', expect.objectContaining({ mode: 'plan', voice: true, channelInstruction: 'notes/channel.md' }))
+    expect(state.compile).toHaveBeenLastCalledWith('/vault', expect.objectContaining({ mode: 'plan', voice: true, channelInstruction: 'notes/channel.md' }), expect.any(Object))
     state.channel = 'notes/new-channel.md'
     await service.validate(thread, expected)
-    expect(state.compile).toHaveBeenLastCalledWith('/vault', expect.objectContaining({ channelInstruction: 'notes/new-channel.md' }))
+    expect(state.compile).toHaveBeenLastCalledWith('/vault', expect.objectContaining({ channelInstruction: 'notes/new-channel.md' }), expect.any(Object))
   })
   it.each(['plan.md', 'tasks.md', 'acceptance.md', 'decisions.md'] as const)('invalidates approval when %s changes', async name => {
     const { service, thread, plan, expected } = await setup()

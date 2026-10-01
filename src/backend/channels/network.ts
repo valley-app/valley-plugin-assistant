@@ -1,3 +1,5 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
 import { t } from '../runtime'
 import path from 'path-browserify'
 import type { PluginFetchRequest } from '@valley/plugin-sdk/pluginNetwork'
@@ -29,7 +31,7 @@ export async function readBoundedMedia(response: Response, limit: number, signal
   finally { reader.releaseLock() }
 }
 
-export async function telegramFetch(url: string, input: RequestInit = {}): Promise<Response> {
+export async function telegramFetch(url: string, input: RequestInit = {}, api: OwnerApi = backendApi()): Promise<Response> {
   const target = new URL(url)
   const parts = target.pathname.split('/')
   const index = parts.findIndex((part) => /^bot[0-9a-f-]{36}$/.test(part))
@@ -37,21 +39,20 @@ export async function telegramFetch(url: string, input: RequestInit = {}): Promi
   const handle = parts[index].slice(3)
   parts[index] = ':token'
   target.pathname = parts.join('/')
-  return brokerFetch(target.toString(), { ...input, headers: Object.fromEntries(new Headers(input.headers)), stream: true, credential: { handle, placement: 'path', name: 'token', prefix: 'bot' } })
+  return brokerFetch(target.toString(), { ...input, headers: Object.fromEntries(new Headers(input.headers)), stream: true, credential: { handle, placement: 'path', name: 'token', prefix: 'bot' } }, api)
 }
-export async function whatsappFetch(url: string, input: RequestInit = {}): Promise<Response> {
+export async function whatsappFetch(url: string, input: RequestInit = {}, api: OwnerApi = backendApi()): Promise<Response> {
   const headers = new Headers(input.headers)
   const handle = headers.get('authorization')?.replace(/^Bearer /, '')
   if (!handle) throw new Error(t('assistant.backend.missingChannelCredential'))
   headers.delete('authorization')
-  return brokerFetch(url, { ...input, headers: Object.fromEntries(headers), stream: true, credential: { handle: await credentialForEndpoint(handle, url), placement: 'header', name: 'Authorization', prefix: 'Bearer ' } })
+  return brokerFetch(url, { ...input, headers: Object.fromEntries(headers), stream: true, credential: { handle: await credentialForEndpoint(handle, url, api), placement: 'header', name: 'Authorization', prefix: 'Bearer ' } }, api)
 }
-export async function uploadFile(url: string, credential: NonNullable<PluginFetchRequest['credential']>, absolutePath: string, fields: Record<string, string>, field: string, options?: { fileName?: string; mimeType?: string; maxBytes?: number }): Promise<Response> {
+export async function uploadFile(url: string, credential: NonNullable<PluginFetchRequest['credential']>, absolutePath: string, fields: Record<string, string>, field: string, options?: { fileName?: string; mimeType?: string; maxBytes?: number }, api: OwnerApi = backendApi()): Promise<Response> {
   const relative = path.relative(VAULT_ROOT, absolutePath)
   if (relative.startsWith('../') || path.isAbsolute(relative)) throw new Error(t('assistant.backend.outsideVault'))
-  const api = backendApi()
-  const file = await openOwnedAttachment(relative) ?? await api.files.openVault(relative)
-  const attachment = await findAttachment(relative)
+  const file = await openOwnedAttachment(relative, api) ?? await api.files.openVault(relative)
+  const attachment = await findAttachment(relative, api)
   try {
     if (file.size > (options?.maxBytes ?? 32 * 1024 * 1024)) throw new Error('Attachment exceeds the destination size limit')
     const part = { name: field, handle: file.handle, ...(attachment ? { fileName: attachment.fileName, mimeType: attachment.mime } : {}), ...(options?.fileName ? { fileName: options.fileName } : {}), ...(options?.mimeType ? { mimeType: options.mimeType } : {}) }

@@ -21,9 +21,9 @@ export function registerAttachmentImport(registry: ToolRegistry, options: { conv
       try {
         const file = z.object({ handle: z.string().min(1), name: z.string().min(1).max(4096), size: z.number().int().nonnegative() }).passthrough().parse(result)
         context.operation.cancellation.throwIfAborted()
-        const attachment = await importAttachmentFile({ fileHandle: file.handle, fileName: file.name, kind: 'file' })
+        const attachment = await importAttachmentFile({ fileHandle: file.handle, fileName: file.name, kind: 'file' }, api)
         if (!attachment.id || !attachment.mime) throw new Error('Imported file has no durable identity or MIME type')
-        await referenceAttachments(options.conversationId, [{ role: 'assistant', content: '', attachmentIds: [attachment.id] }])
+        await referenceAttachments(options.conversationId, [{ role: 'assistant', content: '', attachmentIds: [attachment.id] }], api)
         return { id: attachment.id, fileName: attachment.fileName, mime: attachment.mime, kind: attachment.kind, path: attachment.path }
       } finally { await api.files.release([handle]) }
     }

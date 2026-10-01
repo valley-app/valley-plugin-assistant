@@ -19,6 +19,7 @@ import { initRuntime } from '../src/runtime'
 import { getStore, disposeStore } from '../src/store'
 import { Panel } from '../src/Panel'
 import { Page } from '../src/Page'
+import katex from 'katex'
 
 afterEach(() => {
   cleanup()
@@ -143,10 +144,11 @@ it('highlights a project chat only once and limits its folder to five until expa
 
 it('renders compact Markdown previews while keeping links and media inside the chat action', async () => {
   const mock = createMockValleyApi({ settings: { sidebarChronological: true } })
-  const content = '**Canopy** with *moss*, `leaf` and [habitat](https://example.com).'
+  const content = '**Canopy** with *moss*, `leaf`, ==shade== and $\\frac{a^2}{b}$ in [habitat](https://example.com).'
   mock.chatThreads.set('canopy', { ...thread('canopy', 'Canopy report'), messages: [{ role: 'assistant', content }] })
   mock.api.backend.call = vi.fn(async () => []) as typeof mock.api.backend.call
-  const markdown = vi.spyOn(mock.api.markdown, 'render').mockResolvedValue('<p><strong>Canopy</strong> with <em>moss</em>, <code>leaf</code> and <a href="https://example.com">habitat</a>.</p><img src="https://example.com/image.png" alt="Fern"><button>Copy</button>')
+  const math = katex.renderToString('\\frac{a^2}{b}', { output: 'html' })
+  const markdown = vi.spyOn(mock.api.markdown, 'render').mockResolvedValue(`<p><strong>Canopy</strong> with <em>moss</em>, <code>leaf</code>, <mark>shade</mark> and ${math} in <a href="https://example.com">habitat</a>.</p><img src="https://example.com/image.png" alt="Fern"><button>Copy</button>`)
   initRuntime(mock.api)
   const store = getStore(mock.api)
   const open = vi.spyOn(store, 'openChat')
@@ -155,12 +157,32 @@ it('renders compact Markdown previews while keeping links and media inside the c
   const preview = view.container.querySelector('.assistant-thread-preview')!
   expect(preview.querySelector('em')).toHaveTextContent('moss')
   expect(preview.querySelector('code')).toHaveTextContent('leaf')
+  expect(preview.querySelector('mark')).toHaveTextContent('shade')
+  expect(preview.querySelector('.assistant-thread-math')?.innerHTML).toBe(math)
   expect(preview).toHaveTextContent('habitat. Fern')
   expect(preview.querySelector('a, img, button, p')).toBeNull()
   expect(preview).not.toHaveTextContent('Copy')
   expect(markdown).toHaveBeenCalledWith(content, { breaks: true })
   fireEvent.click(preview.querySelector('em')!)
   await waitFor(() => expect(open).toHaveBeenCalledWith('canopy'))
+})
+
+it('renders complete message Markdown before clipping a shortened sidebar summary', async () => {
+  const mock = createMockValleyApi({ settings: { sidebarChronological: true } })
+  const content = `**${'Forest canopy '.repeat(24)}**\n\n==Moss== and $x^2$.`
+  mock.chatThreads.set('forest', { ...thread('forest', 'Forest canopy'), messages: [{ role: 'assistant', content }] })
+  const list = mock.api.assistant.listChats
+  vi.spyOn(mock.api.assistant, 'listChats').mockImplementation(async () => {
+    const result = await list()
+    for (const chat of result.data?.chats ?? []) chat.preview = content.slice(0, 240)
+    return result
+  })
+  mock.api.backend.call = vi.fn(async () => []) as typeof mock.api.backend.call
+  const markdown = vi.spyOn(mock.api.markdown, 'render').mockResolvedValue('<p><strong>Forest canopy</strong></p>')
+  initRuntime(mock.api)
+  getStore(mock.api)
+  render(<Panel />)
+  await waitFor(() => expect(markdown).toHaveBeenCalledWith(content, { breaks: true }))
 })
 
 
@@ -240,6 +262,29 @@ it('does not show a green connection dot just because a transport is running', a
   expect(screen.queryByRole('status', { name: 'Connected' })).toBeNull()
 })
 
+it.each([false, true])('keeps stopped feedback with its current turn (has work: %s)', async hasWork => {
+  const mock = createMockValleyApi()
+  const chat = thread('stopped', 'Forest survey')
+  chat.messages = [
+    { role: 'user', content: 'Describe moss', ts: 1 },
+    { role: 'assistant', content: 'Inspecting moss', toolCalls: [{ id: 'first', name: 'inspect', arguments: {} }], ts: 2 },
+    { role: 'assistant', content: 'Moss retains moisture.', ts: 3 },
+    { role: 'user', content: 'Describe ferns', ts: 4 },
+    ...(hasWork ? [{ role: 'assistant' as const, content: 'Inspecting ferns', toolCalls: [{ id: 'second', name: 'inspect', arguments: {} }], ts: 5 }] : [])
+  ]
+  mock.chatThreads.set(chat.id, chat)
+  initRuntime(mock.api)
+  const store = getStore(mock.api)
+  await store.openChat(chat.id)
+  const snapshot = { ...store.getSnapshot(), stopped: true, activeBusy: false }
+  vi.spyOn(store, 'getSnapshot').mockReturnValue(snapshot)
+  const { container } = render(<Page navigation={{ setController: vi.fn() }} />)
+  await act(async () => { await Promise.resolve() })
+  const status = screen.getByText('Stopped')
+  expect(status.closest(hasWork ? '.assistant-work-stopped' : '.assistant-composer-status')).toBeTruthy()
+  expect(container.querySelector('details')?.querySelector('.assistant-work-stopped')).toBeNull()
+})
+
 
 it.each(['Telegram', 'WhatsApp'])('keeps %s compact without Recents and preserves date grouping and last-chat time', async name => {
   const mock = await mountPanel({})
@@ -298,10 +343,10 @@ it('keeps Chat and ordered icons on one header row above persistent search and a
   const mock = await mountPanel({})
   const header = document.querySelector('.assistant-panel-head')!
   expect(header).toHaveTextContent('Chat')
-  expect(header.querySelectorAll('button')).toHaveLength(4)
+  expect(header.querySelectorAll('button')).toHaveLength(5)
   expect(document.querySelectorAll('.assistant-sidebar-toolbar')).toHaveLength(1)
   const controls = Array.from(document.querySelectorAll('.assistant-source-filters button'))
-  expect(controls.map(button => button.getAttribute('aria-label'))).toEqual(['Telegram', 'WhatsApp', 'Chat', 'Sort by time'])
+  expect(controls.map(button => button.getAttribute('aria-label'))).toEqual(['Telegram', 'WhatsApp', 'Chat', 'Start voice', 'Sort by time'])
   expect(controls.every(button => !button.textContent)).toBe(true)
   const input = screen.getByRole('textbox', { name: 'Search chats' })
   fireEvent.change(input, { target: { value: 'Absent fern' } })

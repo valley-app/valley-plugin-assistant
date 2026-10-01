@@ -1,3 +1,5 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+import { assertCommandOutput } from '../commandContracts'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionCoordinator, type CoordinatorPorts } from '../../src/backend/engine/coordinator'
 import { AssistantRepository } from '../../src/backend/persistence/repositories'
@@ -8,6 +10,56 @@ const submission = (conversationId: string, id = crypto.randomUUID()): TurnSubmi
 const until = async (test: () => boolean) => vi.waitFor(() => expect(test()).toBe(true))
 
 describe('durable session coordinator', () => {
+  it('streams separate conversations simultaneously and stops only the selected conversation', async () => {
+    const controlsByChat = new Map<string, Parameters<CoordinatorPorts['run']>[2]>()
+    let finishFern!: () => void
+    const coordinator = new SessionCoordinator(new AssistantRepository(datasetFixture()), { publish: vi.fn(), project: async () => {}, run: async (session, _turn, controls) => {
+      controlsByChat.set(session.conversationId, controls)
+      await controls.state('INFERRING')
+      await controls.stream(session.conversationId)
+      if (session.conversationId === 'moss') await new Promise<void>(resolve => controls.signal.addEventListener('abort', () => resolve(), { once: true }))
+      else await new Promise<void>(resolve => { finishFern = resolve })
+    } })
+    await coordinator.enqueue(submission('moss'))
+    await coordinator.enqueue(submission('fern'))
+    await until(() => Boolean(finishFern) && coordinator.snapshot('moss')?.state === 'INFERRING')
+    assertCommandOutput('command.session.snapshot', {}, coordinator.snapshot('moss'))
+    assertCommandOutput('command.session.submit', {}, coordinator.snapshot('fern'))
+    expect(coordinator.snapshot('moss')?.streamingText).toBe('moss')
+    expect(coordinator.snapshot('fern')?.streamingText).toBe('fern')
+    await coordinator.stop('moss')
+    await until(() => coordinator.snapshot('moss')?.state === 'INTERRUPTED')
+    expect(controlsByChat.get('fern')!.signal.aborted).toBe(false)
+    await controlsByChat.get('fern')!.stream('Fern is still writing')
+    expect(coordinator.snapshot('fern')?.streamingText).toBe('Fern is still writing')
+    finishFern()
+    await until(() => coordinator.snapshot('fern')?.state === 'IDLE')
+    await coordinator.close()
+  })
+
+  it('accepts fresh steering while a failed run is still saving its final projection', async () => {
+    let release!: () => void
+    const saved = new Promise<void>(resolve => { release = resolve })
+    const run = vi.fn<CoordinatorPorts['run']>(async () => {})
+    run.mockRejectedValueOnce(new Error('Provider unavailable'))
+    const project = vi.fn<CoordinatorPorts['project']>(async () => {})
+    project.mockImplementationOnce(async () => saved)
+    const coordinator = new SessionCoordinator(new AssistantRepository(datasetFixture()), { publish: vi.fn(), project, run })
+    try {
+      await coordinator.enqueue(submission('moss'))
+      await until(() => project.mock.calls.length === 1)
+      const fresh = submission('moss')
+      await coordinator.enqueue(fresh)
+      await coordinator.steer('moss', fresh.id)
+      expect(coordinator.snapshot('moss')).toMatchObject({ state: 'QUEUED', paused: false, error: null, currentTurn: undefined })
+      expect(run).toHaveBeenCalledOnce()
+      release()
+      await until(() => coordinator.snapshot('moss')?.state === 'IDLE')
+      expect(run).toHaveBeenCalledTimes(2)
+      expect(run.mock.calls[1][1]?.id).toBe(fresh.id)
+    } finally { release(); await coordinator.close() }
+  })
+
   it('releases capacity for a question and reacquires it before continuing', async () => {
     let answer!: () => void, finishOther!: () => void
     const events: string[] = []
@@ -77,4 +129,74 @@ describe('durable session coordinator', () => {
     expect(coordinator.snapshot('moss')).toBeNull()
     await coordinator.close()
   })
+  it('keeps each submitted owner until its final projection and reports committed completion after a late cancel', async () => {
+    const data = datasetFixture(), background = datasetFixture()
+    const backgroundWrite = vi.spyOn(background, 'transaction')
+    const owner = { data } as PluginBackendOperationContext['api']
+    let finish!: () => void, publish!: () => void
+    const coordinator = new SessionCoordinator(new AssistantRepository(background), { publish: vi.fn(), run: async (_session, _turn, controls) => {
+      expect(controls.api).toBe(owner)
+      await new Promise<void>(resolve => { finish = resolve })
+      await controls.message({ role: 'assistant', content: 'Committed reply' })
+    }, project: async (_session, _restore, api) => { expect(api).toBe(owner); await new Promise<void>(resolve => { publish = resolve }) } })
+    const input = submission('owned'), controller = new AbortController()
+    await coordinator.enqueue(input, [], owner)
+    let completed = false
+    const result = coordinator.waitForTurn(input.conversationId, input.id, controller.signal).then(value => { completed = true; return value })
+    await until(() => Boolean(finish)); expect(completed).toBe(false)
+    finish(); await until(() => Boolean(publish)); expect(completed).toBe(false)
+    publish(); expect((await result).thread?.messages[0].content).toBe('Committed reply')
+    controller.abort()
+    expect((await coordinator.waitForTurn(input.conversationId, input.id, controller.signal)).state).toBe('IDLE')
+    expect(backgroundWrite).not.toHaveBeenCalled()
+    await coordinator.close()
+  })
+
+  it('rejects revoked late commits without ambient fallback while another operation completes', async () => {
+    const data = datasetFixture(), background = datasetFixture()
+    const backgroundWrite = vi.spyOn(background, 'transaction')
+    let revoked = false, release!: () => void
+    const scopedWrite = vi.fn<typeof data.transaction>(async operations => { if (revoked) throw new Error('Operation revoked'); return data.transaction(operations) })
+    const owner = { data: { ...data, transaction: scopedWrite } } as unknown as PluginBackendOperationContext['api']
+    const other = { data } as PluginBackendOperationContext['api']
+    const coordinator = new SessionCoordinator(new AssistantRepository(background), { publish: vi.fn(), project: async () => {}, run: async (session, _turn, controls) => {
+      if (session.conversationId === 'revoked') {
+        expect(controls.api).toBe(owner)
+        await new Promise<void>(resolve => { release = resolve })
+        await controls.message({ role: 'assistant', content: 'Forbidden late message' })
+      } else { expect(controls.api).toBe(other); await controls.message({ role: 'assistant', content: 'Independent reply' }) }
+    } })
+    const first = submission('revoked'), second = submission('allowed')
+    await coordinator.enqueue(first, [], owner)
+    await until(() => Boolean(release)); revoked = true
+    const failed = coordinator.waitForTurn(first.conversationId, first.id)
+    await coordinator.enqueue(second, [], other)
+    expect((await coordinator.waitForTurn(second.conversationId, second.id)).thread?.messages[0].content).toBe('Independent reply')
+    release(); await expect(failed).rejects.toThrow('Operation revoked')
+    expect(coordinator.snapshot(first.conversationId)?.thread?.messages).toEqual([])
+    expect(backgroundWrite).not.toHaveBeenCalled()
+    await coordinator.close()
+  })
+
+  it('joins a cancelled run before rejecting and never commits its late message', async () => {
+    const controller = new AbortController(), data = datasetFixture(), background = datasetFixture()
+    const fallback = vi.spyOn(background, 'transaction')
+    const owner = { data: { ...data, transaction: async (...args: Parameters<typeof data.transaction>) => { controller.signal.throwIfAborted(); return data.transaction(...args) } } } as unknown as PluginBackendOperationContext['api']
+    let started = false, joined = false
+    const coordinator = new SessionCoordinator(new AssistantRepository(background), { publish: vi.fn(), project: async () => { joined = true }, run: async (_session, _turn, controls) => {
+      started = true
+      await new Promise<void>(resolve => controls.signal.addEventListener('abort', () => resolve(), { once: true }))
+      await controls.message({ role: 'assistant', content: 'Rejected after cancellation' })
+    } })
+    const input = submission('cancelled')
+    await coordinator.enqueue(input, [], owner)
+    const result = coordinator.waitForTurn(input.conversationId, input.id, controller.signal)
+    await until(() => started); controller.abort(new Error('Caller cancelled'))
+    await expect(result).rejects.toThrow('Caller cancelled')
+    expect(joined).toBe(true)
+    expect(coordinator.snapshot(input.conversationId)?.thread?.messages).toEqual([])
+    expect(fallback).not.toHaveBeenCalled()
+    await coordinator.close()
+  })
+
 })

@@ -2,6 +2,7 @@ import { listConnections, readGuardPolicy, appendGuardAudit } from './exports'
 import { t } from './runtime'
 import { z } from 'zod'
 import { startRun, cancelRun } from './exports'
+import { readCommandsSnapshot } from './store'
 import { appendMemory, clearChat, deleteChat, deletePersonality, listChats, listPersonalities, readChat, readCommands, readConfig, readGuardOverrides, readMemory, readPersonality, renameChat, saveChat, saveCommands, saveGuardOverrides, savePersonality, setChatPinned, writeRule } from './exports'
 import { ingestAttachment } from './exports'
 import { addPending, listPending, removePending } from './exports'
@@ -129,6 +130,7 @@ const guardOverrides = z.object({
 })
 
 export const chatThread = z.object({
+  configurationRevision: z.number().int().nonnegative().optional(),
   channelSenderId: z.string().optional(),
   channelTopicId: z.string().optional(),
   channelChatType: z.enum(['private', 'group', 'supergroup', 'channel']).optional(),
@@ -164,6 +166,7 @@ export const chatThread = z.object({
 })
 
 const personality = z.object({
+  configurationRevision: z.number().int().nonnegative(), configurationRevisions: z.record(z.number().int().nonnegative()).optional(),
   id: z.string().min(1),
   name: z.string(),
   isDefault: z.boolean(),
@@ -271,9 +274,9 @@ export const aiDriver = defineDriver({
   // shorthand so every existing plugin/SDK caller keeps working.
   listConnections: defineDriverMethod(z.object({}).optional(), async (root) => ({ connections: await listConnections(root) })),
   getConfig: defineDriverMethod(z.object({}).optional(), (root) => readConfig(root)),
-  writeRule: defineDriverMethod(z.object({ name: z.string(), content: z.string() }), (root, payload) => {
+  writeRule: defineDriverMethod(z.object({ name: z.string(), content: z.string(), expectedRevision: z.number().int().nonnegative() }), (root, payload) => {
       const { name, content } = payload
-      return writeRule(root, name, content)
+      return writeRule(root, name, content, payload.expectedRevision)
     }),
   // Guard policy (`guards.json`) — the single permission rule set. The payload is
   // validated loosely and normalized in main (tolerant: a partial object merges
@@ -330,11 +333,11 @@ export const aiDriver = defineDriver({
   listPersonalities: defineDriverMethod(z.object({}).optional(), async (root) => ({ personalities: await listPersonalities(root) })),
   readPersonality: defineDriverMethod(z.object({ id: z.string() }), async (root, payload) => ({ personality: await readPersonality(root, payload.id) })),
   savePersonality: defineDriverMethod(z.object({ personality }), (root, payload) => savePersonality(root, payload.personality)),
-  deletePersonality: defineDriverMethod(z.object({ id: z.string() }), (root, payload) => deletePersonality(root, payload.id)),
+  deletePersonality: defineDriverMethod(z.object({ id: z.string(), expectedRevision: z.number().int().nonnegative() }), (root, payload) => deletePersonality(root, payload.id, payload.expectedRevision)),
   // ── Overall custom commands (Meadow/Chorus/commands.json) ────────────────────
-  listCommands: defineDriverMethod(z.object({}).optional(), async (root) => ({ commands: await readCommands(root) })),
-  saveCommands: defineDriverMethod(z.object({ commands: z.array(customCommand) }), async (root, payload) => {
-      await saveCommands(root, payload.commands)
+  listCommands: defineDriverMethod(z.object({}).optional(), async (root) => readCommandsSnapshot(root)),
+  saveCommands: defineDriverMethod(z.object({ commands: z.array(customCommand), expectedRevisions: z.record(z.number().int().nonnegative()) }), async (root, payload) => {
+      await saveCommands(root, payload.commands, payload.expectedRevisions)
       return { ok: true }
     }),
   // ── Memory (per-chat memory.jsonl; explicit summarize flow) ──────────────────

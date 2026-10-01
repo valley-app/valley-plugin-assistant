@@ -1,3 +1,4 @@
+import { ErrorNotice } from './Preferences'
 import { VoiceControls } from './voice/VoiceControls'
 import { MessageAttachments } from './media/MessageAttachments'
 import { route } from './router'
@@ -17,6 +18,7 @@ import {
   Pencil,
   Plus,
   Check,
+  ChevronLeft,
   ChevronRight,
   Copy,
   Folder,
@@ -31,6 +33,7 @@ import {
 } from './icons'
 import type { InboundAttachment } from './types'
 import { uiText } from './localization'
+import { LuSettings } from './settingsIcons'
 
 /** Unsupported formats remain downloadable file attachments. */
 function attachmentKind(file: File): InboundAttachment['kind'] | null {
@@ -224,6 +227,14 @@ async function copyMessageText(content: string, owner: Document): Promise<boolea
   try { await owner.defaultView!.navigator.clipboard.writeText(content); return true } catch { return false }
 }
 
+const WorkDisclosure: FC<{ summary: React.ReactNode; children: React.ReactNode }> = ({ summary, children }) => {
+  const [open, setOpen] = React.useState(false)
+  return <details className="assistant-activity-group" open={open} onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>{summary}</summary>
+    {open && children}
+  </details>
+}
+
 const BubbleContent: FC<{ content: string }> = ({ content }) => (
   <div className="assistant-bubble-md">
     <api.ui.MarkdownView value={content} context={{}} />
@@ -283,11 +294,7 @@ const MessageRow: FC<{ message: AiMessage; showMeta?: boolean; copyText?: string
   return (
     <div className={`assistant-msg ${mine ? 'mine' : 'theirs'}`}>
       <MessageAttachments files={message.attachmentFiles} />
-      {content && (
-        <div className={`assistant-bubble${message.error ? ' assistant-error' : ''}`} role={message.error ? 'alert' : undefined}>
-          {message.error && <Warning />}<BubbleContent content={content} />
-        </div>
-      )}
+      {content && (message.error ? <ErrorNotice error={content} /> : <div className="assistant-bubble"><BubbleContent content={content} /></div>)}
       {showMeta && <MessageMeta content={copyText ?? content} ts={message.ts} showTime={showTime} />}
     </div>
   )
@@ -347,7 +354,7 @@ function ComposerPopover({ anchor, label, role = 'dialog', onClose, children }: 
 }): React.ReactElement {
   return <>
     <div className="assistant-popover-dismiss" onPointerDown={onClose} />
-    <div className="assistant-composer-popover" role={role} aria-label={label} onKeyDown={event => {
+    <div className="assistant-composer-popover" data-plugin-widget-occluder="" role={role} aria-label={label} onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); anchor.focus() }
     }}>{children}</div>
   </>
@@ -470,9 +477,7 @@ export function EffortPicker({ value, supported, modelLabel, onChange, onModels 
 /** The full agent chat — main workspace tab. */
 export const Page: FC<MainWorkspaceViewProps> = ({ navigation }) => <ChatView navigation={navigation} />
 
-export const SidebarPage: FC = () => <ChatView />
-
-const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ navigation }) => {
+export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; sidebar?: { onBack(): void; onProperties(): void } }> = ({ navigation, sidebar }) => {
   const { store, snap } = useAssistant()
   const activity = useToolActivity(snap.active?.id)
   React.useEffect(() => {
@@ -498,10 +503,8 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
   }, [draftId, store])
   const [modelListOpen, setModelListOpen] = React.useState(false)
   const [modelAnchor, setModelAnchor] = React.useState<HTMLButtonElement | null>(null)
-  const scrollRef = React.useRef<HTMLDivElement | null>(null)
-  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  const [scrollRequest, requestScroll] = React.useReducer(value => value + 1, 0)
   const bodyRef = React.useRef<HTMLDivElement | null>(null)
-  const followBottom = React.useRef(true)
   const [awayFromBottom, setAwayFromBottom] = React.useState(false)
   const inputRef = React.useRef<HTMLTextAreaElement | null>(null)
   // Composer behaviour lives in Settings → Assistant → Chat.
@@ -512,6 +515,7 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
   const messages = React.useMemo(() => snap.active?.messages ?? [], [snap.active?.messages])
   const renderItems = React.useMemo(() => buildRenderItems(messages, activity.steps), [messages, activity.steps])
   const turnCopy = React.useMemo(() => turnEndCopyText(renderItems), [renderItems])
+  const stoppedWork = snap.stopped && !snap.activeBusy ? renderItems.reduce((last, item, index) => item.kind === 'activity' ? index : item.message.role === 'user' ? -1 : last, -1) : -1
   const source = snap.active?.source
   const readOnly = Boolean(source)
   const { channels, error: channelError } = useChannels()
@@ -533,35 +537,8 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
     fitInput()
   }, [draft, fitInput])
 
-  const updateScrollPosition = React.useCallback(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const away = el.scrollHeight - el.scrollTop - el.clientHeight > 32
-    followBottom.current = !away
-    setAwayFromBottom(away)
-  }, [])
-  const keepLatestVisible = React.useCallback(() => {
-    const el = scrollRef.current
-    if (el && followBottom.current) el.scrollTop = el.scrollHeight
-    updateScrollPosition()
-  }, [updateScrollPosition])
-  React.useLayoutEffect(() => {
-    followBottom.current = true
-    keepLatestVisible()
-  }, [draftId, keepLatestVisible])
-  React.useLayoutEffect(keepLatestVisible, [messages, snap.streamingText, snap.pending, activity.steps, keepLatestVisible])
-  React.useEffect(() => {
-    const el = scrollRef.current, content = contentRef.current
-    const Observer = el?.ownerDocument.defaultView?.ResizeObserver
-    if (!el || !content || !Observer) return
-    const observer = new Observer(keepLatestVisible)
-    observer.observe(el)
-    observer.observe(content)
-    return () => observer.disconnect()
-  }, [keepLatestVisible])
   const jumpToLatest = (): void => {
-    followBottom.current = true
-    keepLatestVisible()
+    requestScroll()
     inputRef.current?.focus({ preventScroll: true })
   }
 
@@ -658,49 +635,57 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
     void store.setAccessMode(mode).catch(() => {})
   }
 
+  const dragHandlers = {
+    onDragEnter: (event: React.DragEvent<HTMLDivElement>) => {
+      if (readOnly || !Array.from(event.dataTransfer.types).includes('Files')) return
+      event.preventDefault(); event.stopPropagation()
+      dragDepth.current += 1
+      setDropping(true)
+    },
+    onDragOver: (event: React.DragEvent<HTMLDivElement>) => {
+      if (readOnly || !Array.from(event.dataTransfer.types).includes('Files')) return
+      event.preventDefault(); event.stopPropagation()
+      event.dataTransfer.dropEffect = 'copy'
+      setDropping(true)
+    },
+    onDragLeave: (event: React.DragEvent<HTMLDivElement>) => {
+      if (!dragDepth.current) return
+      event.stopPropagation()
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (!dragDepth.current) setDropping(false)
+    },
+    onDrop: (event: React.DragEvent<HTMLDivElement>) => {
+      if (readOnly || !event.dataTransfer.files.length) return
+      event.preventDefault(); event.stopPropagation()
+      clearDrop()
+      void addFiles(event.dataTransfer.files)
+    },
+  }
+
   return (
-    <div className="assistant-page">
-      <div className="assistant-page-head">
-        {readOnly && <RemoteIcon className={`assistant-page-source-icon ${remoteIconClass}`} />}
+    <div className="assistant-page" aria-busy={!snap.ready}>
+      <div className={`assistant-page-head${sidebar ? ' assistant-mobile-chat-head' : ''}`}>
+        {sidebar && <button className="assistant-iconbtn" aria-label={uiText('assistant.mobile.back')} title={uiText('assistant.mobile.back')} onClick={sidebar.onBack}><ChevronLeft /></button>}
+        {readOnly && !sidebar && <RemoteIcon className={`assistant-page-source-icon ${remoteIconClass}`} />}
         <div className="assistant-page-title-wrap">
           <div className="assistant-page-title">
             {snap.active?.title ?? uiText('auto.8010d1f4d069')}
           </div>
           {readOnly && <div className="assistant-page-subtitle">{remoteLabel} {uiText('auto.ffff80d25a26')}</div>}
         </div>
-        {readOnly && <span className={`assistant-connection-indicator${connected ? ' is-connected' : ''}`} role="status" aria-label={connectionLabel} title={connectionLabel} />}
+        {sidebar ? <div className="assistant-mobile-chat-actions">
+          <button className="assistant-iconbtn" aria-label={uiText('assistant.mobile.settings')} title={uiText('assistant.mobile.settings')} onClick={sidebar.onProperties}><LuSettings /></button>
+        </div> : readOnly && <span className={`assistant-connection-indicator${connected ? ' is-connected' : ''}`} role="status" aria-label={connectionLabel} title={connectionLabel} />}
       </div>
 
       <div className="assistant-chat-body" ref={bodyRef}
-        onDragEnter={event => {
-          if (readOnly || !Array.from(event.dataTransfer.types).includes('Files')) return
-          event.preventDefault(); event.stopPropagation()
-          dragDepth.current += 1
-          setDropping(true)
-        }}
-        onDragOver={event => {
-          if (readOnly || !Array.from(event.dataTransfer.types).includes('Files')) return
-          event.preventDefault(); event.stopPropagation()
-          event.dataTransfer.dropEffect = 'copy'
-          setDropping(true)
-        }}
-        onDragLeave={event => {
-          if (!dragDepth.current) return
-          event.stopPropagation()
-          dragDepth.current = Math.max(0, dragDepth.current - 1)
-          if (!dragDepth.current) setDropping(false)
-        }}
-        onDrop={event => {
-          if (readOnly || !event.dataTransfer.files.length) return
-          event.preventDefault(); event.stopPropagation()
-          clearDrop()
-          void addFiles(event.dataTransfer.files)
-        }}
+        {...dragHandlers}
       >
-      <div className="assistant-messages" ref={scrollRef} onScroll={updateScrollPosition}>
-      <div className="assistant-message-content" ref={contentRef}>
-        {activity.error && <p role="alert">{activity.error}</p>}
-        {snap.error && !messages.some(message => message.error && message.content === snap.error) && <div className="assistant-error-message" role="alert"><Warning /><span>{snap.error}</span></div>}
+      <div className="assistant-messages" data-plugin-widget-layout="fill">
+      <api.ui.ScrollPanel fill followEnd scrollToEndKey={`${draftId}:${scrollRequest}`} onAtEndChange={atEnd => setAwayFromBottom(!atEnd)}>
+      <div className="assistant-message-content" {...dragHandlers}>
+        {activity.error && <ErrorNotice error={activity.error} />}
+        {snap.error && !messages.some(message => message.error && message.content === snap.error) && <ErrorNotice error={snap.error} />}
         {messages.length === 0 && !snap.streaming && !readOnly && (
           <div className="assistant-welcome">
             <div className="assistant-welcome-mark"><Chat />{uiText('manifest.name')}</div>
@@ -726,14 +711,13 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
               showTime={showTimestamps}
             />
           ) : (
-            <details className="assistant-activity-group" key={i}>
-              <summary><WorkDuration startedAt={item.startedAt} endedAt={item.endedAt} running={snap.activeBusy && !renderItems.slice(i + 1).some(next => next.kind === 'message' && next.message.role === 'user')} /><ChevronRight className="assistant-activity-caret" /></summary>
-              <div className="assistant-activity-group-body" tabIndex={0} role="region" aria-label={uiText('assistant.activity.timeline')}><ol className="assistant-work-timeline">{item.entries.map((entry, index) => <li key={entry.step ? `${entry.step.runId}:${entry.step.callId}` : index}>{entry.message
+            <WorkDisclosure key={i} summary={<><WorkDuration startedAt={item.startedAt} endedAt={item.endedAt} running={snap.activeBusy && !renderItems.slice(i + 1).some(next => next.kind === 'message' && next.message.role === 'user')} /><ChevronRight className="assistant-activity-caret" />{stoppedWork === i && <span className="assistant-work-stopped" role="status">{uiText('assistant.run.stopped')}</span>}</>}>
+              <api.ui.ScrollPanel maxHeight={340} bodyClassName="assistant-activity-group-body"><div tabIndex={0} role="region" aria-label={uiText('assistant.activity.timeline')}><ol className="assistant-work-timeline">{item.entries.map((entry, index) => <li key={entry.step ? `${entry.step.runId}:${entry.step.callId}` : index}>{entry.message
                 ? <div className="assistant-activity-commentary" key={index}><BubbleContent content={entry.message.displayContent ?? entry.message.content} /></div>
                 : entry.step && snap.active
                   ? <ToolActivityRow key={`${entry.step.runId}:${entry.step.callId}`} step={entry.step} steps={activity.steps} chatId={snap.active.id} expandAll={false} onStop={() => store.stop(snap.active?.id)} />
-                  : <ActivityBlock key={index} entries={[entry]} />}</li>)}</ol></div>
-            </details>
+                  : <ActivityBlock key={index} entries={[entry]} />}</li>)}</ol></div></api.ui.ScrollPanel>
+            </WorkDisclosure>
           )
         )}
         {snap.streaming && snap.streamingText && (
@@ -746,7 +730,6 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
         )}
         {snap.streaming && !snap.streamingText && !snap.pending && <ThinkingIndicator phase={snap.phase} />}
 
-        {snap.stopped && !snap.activeBusy && <div className="assistant-run-status" role="status"><X />{uiText('assistant.run.stopped')}</div>}
         {snap.pending && <div className="assistant-run-status" role="status"><Hand />{uiText('assistant.run.approval')}</div>}
         {snap.pending && (
           <ApprovalCard request={snap.pending} onRespond={(a) => store.respond(snap.pending!.requestId, a)} />
@@ -767,9 +750,11 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
           </div>
         )}
       </div>
+      </api.ui.ScrollPanel>
       </div>
 
       <div className="assistant-composer-dock">
+      {snap.stopped && !snap.activeBusy && stoppedWork < 0 && <div className="assistant-composer-status" role="status">{uiText('assistant.run.stopped')}</div>}
       {!readOnly && slashOpen && <SlashMenu commands={slashMatches} selected={Math.min(slashIndex, slashMatches.length - 1)} onSelect={chooseSlash} />}
       {!readOnly && snap.active?.mode === 'plan' && snap.active.plan?.status === 'review' && !snap.activeBusy && <div className="assistant-plan-review" role="group" aria-label={uiText('assistant.plan.review')}>
         <span>{uiText('assistant.plan.review')}</span>
@@ -777,7 +762,7 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
         <button className="assistant-btn assistant-btn-ghost" onClick={() => { void store.changePlan(snap.active!.plan!.id).then(() => inputRef.current?.focus()).catch(error => setAttachmentError(String(error))) }}>{uiText('assistant.plan.change')}</button>
         <button className="assistant-btn" onClick={() => { void store.implementPlan(snap.active!.plan!.id).catch(error => setAttachmentError(String(error))) }}>{uiText('assistant.plan.implement')}</button>
       </div>}
-      {!readOnly && snap.active && <VoiceControls conversationId={snap.active.id} executionState={snap.activeBusy ? snap.phase : snap.stopped ? 'cancelled' : snap.error ? 'failed' : snap.active.plan?.status === 'review' ? 'review' : 'idle'} response={(() => { const message = [...(snap.active?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.content && !message.error && !message.toolCalls?.length); return message?.id && !snap.activeBusy ? { id: message.id, text: message.content } : undefined })()} onTranscript={({ id, text }) => store.send(text, undefined, id, 'voice')} onError={setAttachmentError} onInterrupted={() => store.interruptVoice()} />}
+      {!readOnly && snap.active && <VoiceControls hiddenLauncher requested={snap.voiceConversationId === snap.active.id} onClose={() => store.closeVoice()} conversationId={snap.active.id} executionState={snap.activeBusy ? snap.phase : snap.stopped ? 'cancelled' : snap.error ? 'failed' : snap.active.plan?.status === 'review' ? 'review' : 'idle'} response={(() => { const message = [...(snap.active?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.content && !message.error && !message.toolCalls?.length); return message?.id && !snap.activeBusy ? { id: message.id, text: message.content } : undefined })()} onTranscript={({ id, text }) => store.send(text, undefined, id, 'voice')} onError={setAttachmentError} onInterrupted={() => store.interruptVoice()} />}
       {awayFromBottom && <button type="button" className="assistant-jump-latest" title={uiText('assistant.scroll.latest')} aria-label={uiText('assistant.scroll.latest')} onClick={jumpToLatest}><ArrowDown /></button>}
       {readOnly ? (
         <div className="assistant-channel-banner" role="status">
@@ -788,7 +773,7 @@ const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation'] }> = ({ n
         <div
           className={`assistant-composer${snap.streaming ? ' is-streaming' : ''}${danger ? ' is-dangerous' : ''}`}
         >
-          {attachmentError && <p role="alert">{attachmentError}</p>}
+          {attachmentError && <ErrorNotice error={attachmentError} />}
           {attachments.length > 0 && (
             <div className="assistant-attach-chips">
               {attachments.map((a, i) => (

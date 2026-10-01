@@ -1,4 +1,4 @@
-import type { PDFDocumentProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy, PDFDocumentLoadingTask, PDFWorker } from 'pdfjs-dist'
 import type { AttachmentReadResult } from '../../contracts/attachments'
 
 export type PageVision = (base64: string, page: number, signal?: AbortSignal) => Promise<string>
@@ -72,9 +72,29 @@ export async function readPdf(bytes: Uint8Array, options: Parameters<typeof extr
   const assets = new URL('./assets/pdf/', import.meta.url).href
   pdfjs.GlobalWorkerOptions.workerSrc = `${assets}pdf.worker.min.mjs`
   options.signal?.throwIfAborted()
-  const task = pdfjs.getDocument({ data: bytes.slice(), cMapUrl: `${assets}cmaps/`, standardFontDataUrl: `${assets}standard_fonts/`, wasmUrl: `${assets}wasm/`, iccUrl: `${assets}iccs/`, maxImageSize: 4_000_000, canvasMaxAreaInBytes: 16_000_000, stopAtErrors: true, enableXfa: false })
-  const abort = () => { void task.destroy() }
-  options.signal?.addEventListener('abort', abort, { once: true })
-  try { return await extractPdf(await task.promise, options) }
-  finally { options.signal?.removeEventListener('abort', abort); await task.destroy() }
+  const headless = typeof document === 'undefined'
+  const port = headless ? new Worker(pdfjs.GlobalWorkerOptions.workerSrc, { type: 'module' }) : undefined
+  let worker: PDFWorker | undefined, task: PDFDocumentLoadingTask | undefined, failed = false
+  let rejectWorker: (error: Error) => void = () => {}
+  const workerFailure = port ? new Promise<never>((_resolve, reject) => { rejectWorker = reject }) : undefined
+  const workerError = (event: ErrorEvent) => { failed = true; rejectWorker(new Error(event.message || 'PDF worker failed')) }
+  port?.addEventListener('error', workerError)
+  const abort = () => { void task?.destroy().catch(() => {}) }
+  try {
+    const PortWorker = pdfjs.PDFWorker as unknown as { new(options: { port: Worker }): PDFWorker }
+    worker = port ? new PortWorker({ port }) : undefined
+    task = pdfjs.getDocument({ data: bytes.slice(), cMapUrl: `${assets}cmaps/`, standardFontDataUrl: `${assets}standard_fonts/`, wasmUrl: `${assets}wasm/`, iccUrl: `${assets}iccs/`, maxImageSize: 4_000_000, canvasMaxAreaInBytes: 16_000_000, stopAtErrors: true, enableXfa: false, ...(headless ? { worker, useWorkerFetch: true, disableFontFace: true, useSystemFonts: false, isOffscreenCanvasSupported: false, isImageDecoderSupported: false, useWasm: false } : {}) })
+    options.signal?.addEventListener('abort', abort, { once: true })
+    options.signal?.throwIfAborted()
+    const extraction = task.promise.then(document => extractPdf(document, options))
+    return await (workerFailure ? Promise.race([extraction, workerFailure]) : extraction)
+  } finally {
+    options.signal?.removeEventListener('abort', abort)
+    port?.removeEventListener('error', workerError)
+    try {
+      const cleanup = task?.destroy()
+      if (failed) void cleanup?.catch(() => {})
+      else await cleanup
+    } finally { worker?.destroy(); port?.terminate() }
+  }
 }

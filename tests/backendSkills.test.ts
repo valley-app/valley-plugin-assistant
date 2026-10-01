@@ -4,7 +4,7 @@ import type { PluginBackendApi } from '@valley/plugin-sdk'
 const guard = vi.hoisted(() => vi.fn())
 vi.mock('../src/backend/guards', () => ({ guardFilePath: guard }))
 import { datasetFixture } from './backendDatasetFixture'
-import { initBackend } from '../src/backend/runtime'
+import { backendApi, initBackend } from '../src/backend/runtime'
 import { runSkill } from '../src/backend/skills'
 
 const resolve = vi.fn(), run = vi.fn(), cancel = vi.fn(), openVault = vi.fn(), release = vi.fn(), off = vi.fn()
@@ -30,7 +30,7 @@ describe('Assistant-owned native skill runner', () => {
   it('checks the file policy and passes only approved handles to native execution', async () => {
     const path = 'Reports/a; $(touch unwanted).pdf'
     expect(await runSkill('/vault', 'markitdown', { path })).toBe('Grüsse')
-    expect(guard).toHaveBeenCalledWith('/vault', path, 'read')
+    expect(guard).toHaveBeenCalledWith('/vault', path, 'read', backendApi())
     expect(openVault).toHaveBeenCalledWith(path)
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ executable: 'approved-executable', args: [{ input: 'approved-file' }] }))
     expect(release).toHaveBeenCalledWith(['approved-file'])

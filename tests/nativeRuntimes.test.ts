@@ -19,7 +19,7 @@ let api: PluginBackendApi, requests: AiChatRequest[], messages: Array<Record<str
 const listeners = new Set<(event: PluginProcessEvent) => void>(), streams = new Set<(event: AiStreamEvent) => void>()
 const nativeArch = process.env.ASSISTANT_RUNTIME_TEST_ARCH ?? process.arch
 const harness = 'deepseek'
-const input = () => ({ runId: crypto.randomUUID(), chatId: 'fixture-chat', harness, request: { requestId: crypto.randomUUID(), provider: 'fixture', connectionId: 'selected', model: 'exact-model', messages: [{ role: 'system', content: 'Use the supplied tool.' }, { role: 'user', content: 'Earlier question' }, { role: 'assistant', content: 'Earlier answer' }, { role: 'user', content: 'Read flower.txt' }], tools: [{ name: 'read_file', description: 'Read a project file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false } }] } })
+const input = () => ({ runId: crypto.randomUUID(), chatId: 'fixture-chat', harness, request: { requestId: crypto.randomUUID(), provider: 'fixture', connectionId: 'selected', model: 'exact-model', messages: [{ role: 'system', content: 'Use the supplied tool.' }, { role: 'user', content: 'Earlier question' }, { role: 'assistant', content: 'Earlier answer' }, { role: 'user', content: 'Read flower.txt' }], tools: [{ group: 'general', effect: 'read', name: 'read_file', description: 'Read a project file', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false } }] } })
 beforeEach(async () => {
   directory = await fs.mkdtemp(path.join(tmpdir(), 'assistant-runtime-'))
   await fs.writeFile(path.join(directory, 'flower.txt'), 'Blüten ä ö ü')
@@ -77,12 +77,48 @@ beforeEach(async () => {
 })
 afterEach(async () => { if (child && child.exitCode === null && !child.signalCode) { child.kill('SIGKILL'); await closed }; child = undefined; await fs.rm(directory, { recursive: true, force: true }) })
 describe.skipIf(process.platform !== 'darwin')('bundled DeepSeek with the Assistant shared transport adapter', () => {
+  it('retries one empty inference with a fresh identity before any tool executes', async () => {
+    const complete = api.ai.complete
+    let emptyId = ''
+    api.ai.complete = async request => {
+      if (!emptyId) { emptyId = request.requestId; return { text: '', toolCalls: [], events: [], inputTokens: 10, outputTokens: 10, latencyMs: 1, finishReason: 'stop', connectionId: 'selected' } }
+      expect(request.requestId).not.toBe(emptyId)
+      return complete(request)
+    }
+    await runNativeRuntime(input(), context)
+    expect(requests).toHaveLength(2)
+    expect(messages.filter(value => value.type === 'tool')).toHaveLength(1)
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'message', message: expect.objectContaining({ content: 'Verified Grüße' }) }))
+  }, 15000)
+
+  it('reports repeated empty provider output without retrying indefinitely', async () => {
+    const complete = vi.fn(async () => ({ text: '', toolCalls: [], events: [], inputTokens: 10, outputTokens: 10, latencyMs: 1, finishReason: 'stop', connectionId: 'selected' }))
+    api.ai.complete = complete
+    await expect(runNativeRuntime(input(), context)).rejects.toThrow('empty response after retrying')
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(messages.some(value => value.type === 'tool')).toBe(false)
+  }, 15000)
+
+  it('reconciles final text and tool calls when stream events are missing', async () => {
+    const complete = api.ai.complete
+    api.ai.complete = async request => {
+      const subscribers = [...streams]
+      streams.clear()
+      try { return await complete(request) } finally { for (const listener of subscribers) streams.add(listener) }
+    }
+    await runNativeRuntime(input(), context)
+    expect(requests).toHaveLength(2)
+    expect(messages.filter(value => value.type === 'tool')).toHaveLength(1)
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'message', message: expect.objectContaining({ role: 'assistant', content: 'Verified Grüße' }) }))
+  }, 15000)
+
   it.each(['low', 'high', 'max'] as const)('retains history and the exact model at %s effort through tools', async reasoningEffort => {
     const turn = input()
     await runNativeRuntime({ ...turn, request: { ...turn.request, reasoningEffort } }, context)
     expect(requests.every(request => request.reasoningEffort === reasoningEffort)).toBe(true)
     expect(requests).toHaveLength(2)
     expect(requests[1].messages.find(message => message.toolCalls?.length)?.continuation?.reasoningContent).toBe('continuation-1')
+    expect(requests.flatMap(request => request.tools ?? []).every(tool => !('group' in tool) && !('effect' in tool))).toBe(true)
     expect(requests.every(request => request.model === 'exact-model' && request.connectionId === 'selected' && request.origin === 'harness')).toBe(true)
     expect(requests[1].messages).toEqual(expect.arrayContaining([expect.objectContaining({ content: 'Earlier answer' }), expect.objectContaining({ role: 'tool', content: 'Blüten ä ö ü' })]))
     expect(messages).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text', text: 'Verified Grüße' }), expect.objectContaining({ type: 'message', message: expect.objectContaining({ role: 'assistant', content: 'Verified Grüße', ts: expect.any(Number) }) })]))

@@ -11,7 +11,7 @@ import { channelManager } from '../src/backend/channels/manager'
 import { channelKey, channelSecretKey, setSecret } from '../src/backend/secrets'
 import { DEFAULT_WHATSAPP_GRAPH_VERSION, DEFAULT_WHATSAPP_WEBHOOK_PORT } from '../src/backend/channels/whatsapp'
 import type { MessagingChannel } from '../src/backend/channels/types'
-import { writeChannelConfigurations } from '../src/backend/configuration/channels'
+import { channelConfigurationRevisions, readChannelConfigurations, writeChannelConfigurations } from '../src/backend/configuration/channels'
 import { AssistantRepository, record } from '../src/backend/persistence/repositories'
 import { datasetFixture } from './backendDatasetFixture'
 
@@ -52,6 +52,7 @@ describe('telegram adapter (pure)', () => {
 
 describe('channel manager (multi-instance, pluggable)', () => {
   let root: string
+  const revisions = async () => channelConfigurationRevisions(await readChannelConfigurations(root, {}))
   const sent: { token: string; chatRef: string; text: string }[] = []
 
   // A second adapter *type* registers cleanly beside Telegram; the manager
@@ -86,9 +87,9 @@ describe('channel manager (multi-instance, pluggable)', () => {
   it('reports current configured account and recipient availability rather than adapter presence', async () => {
     const config = { bot: { type: 'telegram', name: 'Field bot', allowFrom: ['123'], enabled: false } }
     const destination = { kind: 'telegram' as const, conversationId: 'chat', channelId: 'bot', chatRef: '123' }
-    await writeChannelConfigurations(root, config)
+    await writeChannelConfigurations(root, config, await revisions())
     expect(await channelManager.operationDescriptors(root, destination)).toMatchObject({ available: false, reason: 'Channel connection is disabled' })
-    config.bot.enabled = true; await writeChannelConfigurations(root, config)
+    config.bot.enabled = true; await writeChannelConfigurations(root, config, await revisions())
     expect(await channelManager.operationDescriptors(root, destination)).toMatchObject({ available: false, reason: 'Channel credential is missing or unreadable' })
     await setSecret(root, channelKey('bot'), 'TOKEN', [{ host: 'api.telegram.org', port: 443, security: 'tls' }])
     const result = await channelManager.operationDescriptors(root, destination)
@@ -99,7 +100,7 @@ describe('channel manager (multi-instance, pluggable)', () => {
   })
 
   it('reports the WhatsApp support window from durable receipts and retains templates when closed', async () => {
-    await writeChannelConfigurations(root, { wa: { type: 'whatsapp', name: 'Field phone', allowFrom: ['123'], enabled: true, phoneNumberId: 'phone' } })
+    await writeChannelConfigurations(root, { wa: { type: 'whatsapp', name: 'Field phone', allowFrom: ['123'], enabled: true, phoneNumberId: 'phone' } }, await revisions())
     await setSecret(root, channelKey('wa'), 'TOKEN', [{ host: 'graph.facebook.com', port: 443, security: 'tls' }])
     const repository = new AssistantRepository(datasetFixture())
     channelManager.bindRuntime({ repository, onInbound: async () => {}, onLifecycle: async () => {} })
@@ -112,9 +113,9 @@ describe('channel manager (multi-instance, pluggable)', () => {
   })
 
   it('does not restart a channel whose pending credentials complete after stopAll', async () => {
-    const id = await channelManager.add(root, 'fake', 'Forest')
+    const id = await channelManager.add(root, 'fake', 'Forest', await revisions())
     await setSecret(root, channelKey(id), 'TOK', [{ host: 'api.telegram.org', port: 443, security: 'tls' }])
-    await channelManager.start(root, id)
+    await channelManager.start(root, id, await revisions())
     await channelManager.stopAll()
     let finish!: (value: string) => void
     const credential = vi.spyOn(channelManager, 'credential').mockImplementationOnce(() => new Promise<string>(resolve => { finish = resolve }))
@@ -130,15 +131,15 @@ describe('channel manager (multi-instance, pluggable)', () => {
   })
 
   it('adds, names, starts/stops, routes sends, and removes an instance', async () => {
-    const id = await channelManager.add(root, 'fake', 'My Fake')
+    const id = await channelManager.add(root, 'fake', 'My Fake', await revisions())
     let info = (await channelManager.list(root)).find((c) => c.id === id)
     expect(info?.name).toBe('My Fake')
     expect(info?.type).toBe('fake')
     expect(info?.configured).toBe(false)
 
     await setSecret(root, channelKey(id), 'TOK', [{ host: 'api.telegram.org', port: 443, security: 'tls' }])
-    await channelManager.rename(root, id, 'Renamed')
-    await channelManager.start(root, id)
+    await channelManager.rename(root, id, 'Renamed', await revisions())
+    await channelManager.start(root, id, await revisions())
     info = (await channelManager.list(root)).find((c) => c.id === id)
     expect(info?.running).toBe(true)
     expect(info?.name).toBe('Renamed')
@@ -146,10 +147,10 @@ describe('channel manager (multi-instance, pluggable)', () => {
     await channelManager.send(root, id, 'chat1', 'hello')
     expect(sent).toContainEqual({ token: `opaque:${channelKey(id)}`, chatRef: 'chat1', text: 'hello' })
 
-    await channelManager.stop(root, id)
+    await channelManager.stop(root, id, await revisions())
     expect((await channelManager.list(root)).find((c) => c.id === id)?.running).toBe(false)
 
-    await channelManager.remove(root, id)
+    await channelManager.remove(root, id, await revisions())
     expect((await channelManager.list(root)).find((c) => c.id === id)).toBeUndefined()
   })
 
@@ -178,7 +179,7 @@ describe('channel manager (multi-instance, pluggable)', () => {
     }, ['api.telegram.org'])
 
     // Button-capable adapter: gets the structured buttons.
-    const withBtn = await channelManager.add(root, 'fakebtn', 'WithButtons')
+    const withBtn = await channelManager.add(root, 'fakebtn', 'WithButtons', await revisions())
     await setSecret(root, channelKey(withBtn), 'TOK', [{ host: 'api.telegram.org', port: 443, security: 'tls' }])
     await channelManager.sendButtons(root, withBtn, 'chatA', 'Confirm?', [
       { label: '✅ Allow', value: 'yes' },
@@ -188,7 +189,7 @@ describe('channel manager (multi-instance, pluggable)', () => {
     expect(buttoned[0].buttons.map((b) => b.value)).toEqual(['yes', 'no'])
 
     // Adapter without sendButtons: falls back to a plain message listing choices.
-    const noBtn = await channelManager.add(root, 'fake', 'NoButtons')
+    const noBtn = await channelManager.add(root, 'fake', 'NoButtons', await revisions())
     await setSecret(root, channelKey(noBtn), 'TOK', [{ host: 'api.telegram.org', port: 443, security: 'tls' }])
     await channelManager.sendButtons(root, noBtn, 'chatB', 'Confirm?', [
       { label: '✅ Allow', value: 'yes' },
@@ -198,15 +199,15 @@ describe('channel manager (multi-instance, pluggable)', () => {
   })
 
   it('supports multiple named connections of the same type', async () => {
-    const a = await channelManager.add(root, 'fake', 'Alpha')
-    const b = await channelManager.add(root, 'fake', 'Beta')
+    const a = await channelManager.add(root, 'fake', 'Alpha', await revisions())
+    const b = await channelManager.add(root, 'fake', 'Beta', await revisions())
     const list = await channelManager.list(root)
     expect(list.filter((c) => c.type === 'fake').map((c) => c.name).sort()).toEqual(['Alpha', 'Beta'])
     expect(a).not.toBe(b)
   })
 
   it('registers WhatsApp and marks it configured only with official Cloud API config and secrets', async () => {
-    const id = await channelManager.add(root, 'whatsapp', 'Fungi Channel')
+    const id = await channelManager.add(root, 'whatsapp', 'Fungi Channel', await revisions())
     let wa = (await channelManager.list(root)).find((c) => c.id === id)
     expect(wa).toMatchObject({
       type: 'whatsapp',
@@ -222,7 +223,7 @@ describe('channel manager (multi-instance, pluggable)', () => {
       phoneNumberId: 'PNID',
       allowFrom: ['15550100001'],
       publicCallbackUrl: 'https://example.com/assistant/whatsapp/fungi'
-    })
+    }, await revisions())
     wa = (await channelManager.list(root)).find((c) => c.id === id)
     expect(wa?.configured).toBe(false)
 

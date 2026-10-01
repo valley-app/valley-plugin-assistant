@@ -1,3 +1,4 @@
+import type { ConfigurationApi } from './configuration/documents'
 import path from 'path-browserify'
 import * as fs from './filesystem'
 import { VAULT_ROOT } from './runtime'
@@ -13,14 +14,13 @@ export const skillRequestSchema = z.object({
   args: z.record(z.string().max(4096)).default({})
 }).strict()
 
-export async function runSkill(root: string, runnable: string, args: Record<string, string>): Promise<string> {
+export async function runSkill(root: string, runnable: string, args: Record<string, string>, api: ConfigurationApi = backendApi()): Promise<string> {
   if (runnable !== 'markitdown') throw new Error(t('assistant.backend.unknownRunnable', { runnable }))
   if (!args.path?.trim()) throw new Error(t('assistant.backend.runnablePath', { runnable }))
-  const api = backendApi()
   const tool = await api.native.resolve({ name: 'markitdown' })
   if (!tool) throw new Error(t('assistant.backend.missingTool'))
-  const owned = await openOwnedAttachment(args.path)
-  if (!owned) await guardFilePath(root, args.path, 'read')
+  const owned = await openOwnedAttachment(args.path, api)
+  if (!owned) await guardFilePath(root, args.path, 'read', api)
   const file = owned ?? await api.files.openVault(args.path)
   const jobId = crypto.randomUUID(), decoder = new TextDecoder(), errorDecoder = new TextDecoder()
   let output = '', errors = '', truncated = false

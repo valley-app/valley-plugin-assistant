@@ -1,3 +1,4 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import type { AiChatThread } from '../types'
@@ -27,7 +28,7 @@ export function instructionContext(thread: AiChatThread) {
   return { conversationId: thread.id, mode: thread.mode ?? 'execute' as const, context: thread.projectId ? 'MIXED' as const : 'VAULT' as const, profileId: thread.profileId, source: thread.source, conversationInstruction: thread.instructionsPath, projectInstruction: thread.projectId ? relativeAssistantNote(projectConfigurationNote(thread.projectId)) : undefined }
 }
 export class PlanService {
-  constructor(private repository: AssistantRepository) {}
+  constructor(private repository: AssistantRepository, private api: PluginBackendOperationContext['api'] = backendApi()) {}
   async reserveRevision(thread: AiChatThread, id: string): Promise<number> {
     const previous = await this.repository.rows<{ id: string; revision: number }>('plans', { conversationId: thread.id })
     const revision = Math.max(thread.plan?.id === id ? thread.plan.revision ?? 0 : 0, ...previous.filter(value => value.id === id).map(value => value.revision)) + 1
@@ -35,7 +36,7 @@ export class PlanService {
     return revision
   }
   async present(thread: AiChatThread, scopeId: string, id: string, revision: number, files: PlanFiles, instructionSnapshotId: string, instructionScope?: InstructionScope): Promise<SavedPlan> {
-    const output = await backendApi().agent.writePlan(scopeId, files)
+    const output = await this.api.agent.writePlan(scopeId, files)
     if (output.hash !== planHash(files)) throw new Error('Plan artifact integrity check failed')
     const plan: SavedPlan = { id, revision, conversationId: thread.id, artifactHash: output.hash, instructionSnapshotId, instructionScope, directory: output.directory, status: 'review', createdAt: Date.now() }
     await this.repository.data.transaction([{ dataset: 'plans', operation: 'upsert', values: record(`${id}:${revision}`, thread.id, 'REVIEW', plan, revision) }])
@@ -50,7 +51,7 @@ export class PlanService {
   }
   async files(plan: SavedPlan): Promise<PlanFiles> {
     const files = {} as PlanFiles
-    for (const name of ['plan.md', 'tasks.md', 'acceptance.md', 'decisions.md'] as const) files[name] = await readFile(`${VAULT_ROOT}/${plan.directory}/${name}`)
+    for (const name of ['plan.md', 'tasks.md', 'acceptance.md', 'decisions.md'] as const) files[name] = await readFile(`${VAULT_ROOT}/${plan.directory}/${name}`, 'utf8', this.api)
     if (planHash(files) !== plan.artifactHash) throw new Error('Plan files changed after review. Refine and review a new revision.')
     return files
   }
@@ -63,8 +64,8 @@ export class PlanService {
   }
   private async verify(thread: AiChatThread, plan: SavedPlan) {
     await this.files(plan)
-    const channel = thread.channelId ? (await channelManager.list(VAULT_ROOT)).find(value => value.id === thread.channelId) : undefined
-    const instructions = await compileInstructions(VAULT_ROOT, { ...plan.instructionScope, ...instructionContext(thread), mode: 'plan', channelInstruction: channel?.instructionsPath })
+    const channel = thread.channelId ? (await channelManager.list(VAULT_ROOT, this.api)).find(value => value.id === thread.channelId) : undefined
+    const instructions = await compileInstructions(VAULT_ROOT, { ...plan.instructionScope, ...instructionContext(thread), mode: 'plan', channelInstruction: channel?.instructionsPath }, this.api)
     if (configurationDiagnostics().length || instructions.retained || instructions.error || instructions.hash !== plan.instructionSnapshotId) throw new Error('Instructions changed or contain errors. Refine the plan before approval.')
   }
 }

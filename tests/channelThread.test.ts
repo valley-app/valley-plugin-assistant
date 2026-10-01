@@ -10,16 +10,81 @@ const settled = async (runtime: ReturnType<typeof createBackendChannelFixture>['
 }
 
 describe('backend-owned remote conversations', () => {
+  it('replaces cumulative streaming snapshots instead of repeating text', async () => {
+    const { runtime, emit } = createBackendChannelFixture()
+    channelFixture.infer.mockImplementationOnce(async (_input, _context, hooks) => {
+      hooks.event({ type: 'text', text: 'Moss' })
+      await new Promise(resolve => setTimeout(resolve, 120))
+      hooks.event({ type: 'text', text: 'Moss retains water.' })
+      hooks.event({ type: 'message', message: { role: 'assistant', content: 'Moss retains water.' } })
+    })
+    const accepted = await runtime.inbound('telegram', incoming())
+    await settled(runtime, accepted.conversationId)
+    const snapshots = emit.mock.calls.filter(([name, value]) => name === 'session.changed' && value.event.type === 'stream').map(([, value]) => value.session.streamingText)
+    expect(snapshots).toEqual(['Moss', 'Moss retains water.'])
+  })
+
+  it('runs a fresh authenticated message after a failure without replaying the failed turn', async () => {
+    const { runtime, data } = createBackendChannelFixture()
+    channelFixture.infer.mockRejectedValueOnce(new Error('Provider temporarily unavailable'))
+    const failed = await runtime.inbound('telegram', incoming())
+    await vi.waitFor(() => expect(runtime.coordinator.snapshot(failed.conversationId)?.state).toBe('FAILED'))
+    await runtime.close()
+    const restored = createBackendChannelFixture(data).runtime
+    await restored.restore()
+    expect(restored.coordinator.snapshot(failed.conversationId)).toMatchObject({ state: 'FAILED', error: 'Error: Provider temporarily unavailable' })
+    await restored.inbound('telegram', incoming({ text: 'Describe the canopy', providerEventId: 'fresh' }))
+    await settled(restored, failed.conversationId)
+    expect(channelFixture.infer).toHaveBeenCalledTimes(2)
+    const users = restored.coordinator.snapshot(failed.conversationId)!.thread!.messages.filter(message => message.role === 'user')
+    expect(users.map(message => message.content)).toEqual(['hi', 'Describe the canopy'])
+    await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledOnce())
+  })
+
+  it.each(['FAILED', 'INTERRUPTED'] as const)('runs a new typed message after a restored %s turn without replay', async state => {
+    const { runtime, data } = createBackendChannelFixture()
+    const thread: AiChatThread = { id: 'local-moss', title: 'Moss', titleOrigin: 'manual', createdAt: 1, updatedAt: 1, messages: [] }
+    channelFixture.infer.mockRejectedValueOnce(new Error('Provider temporarily unavailable'))
+    await runtime.submit({ id: 'first-local', conversationId: thread.id, text: 'Describe moss', thread })
+    await vi.waitFor(() => expect(runtime.coordinator.snapshot(thread.id)?.state).toBe('FAILED'))
+    if (state === 'INTERRUPTED') await runtime.coordinator.stop(thread.id)
+    await runtime.close()
+    const restored = createBackendChannelFixture(data).runtime
+    await restored.restore()
+    expect(restored.coordinator.snapshot(thread.id)).toMatchObject({ state, paused: true })
+    expect(channelFixture.infer).toHaveBeenCalledOnce()
+    await restored.submit({ id: 'fresh-local', conversationId: thread.id, text: 'Describe the canopy' })
+    await settled(restored, thread.id)
+    await restored.submit({ id: 'fresh-local', conversationId: thread.id, text: 'Describe the canopy' })
+    expect(channelFixture.infer).toHaveBeenCalledTimes(2)
+    expect(restored.coordinator.snapshot(thread.id)).toMatchObject({ state: 'IDLE', paused: false, error: null, queue: [] })
+    expect(restored.coordinator.snapshot(thread.id)!.thread!.messages.filter(message => message.role === 'user').map(message => message.content)).toEqual(['Describe moss', 'Describe the canopy'])
+    expect(channelFixture.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('lets clear discard paused pending messages without running them', async () => {
+    const { runtime } = createBackendChannelFixture()
+    channelFixture.infer.mockRejectedValueOnce(new Error('Provider temporarily unavailable'))
+    const failed = await runtime.inbound('telegram', incoming())
+    await vi.waitFor(() => expect(runtime.coordinator.snapshot(failed.conversationId)?.state).toBe('FAILED'))
+    await runtime.coordinator.enqueue({ id: 'older', conversationId: failed.conversationId, text: 'Inspect a meadow' })
+    await runtime.inbound('telegram', incoming({ text: '/clear', providerEventId: 'clear' }))
+    await settled(runtime, failed.conversationId)
+    expect(channelFixture.infer).toHaveBeenCalledOnce()
+    expect(runtime.coordinator.snapshot(failed.conversationId)!.thread!.messages).toHaveLength(1)
+    expect(runtime.coordinator.snapshot(failed.conversationId)!.thread!.messages[0].content).toContain('Conversation cleared')
+  })
+
   it('runs and persists an incoming Telegram conversation without a renderer listener', async () => {
     const local: AiChatThread = { id: 'local', title: 'Local chat', createdAt: 1, updatedAt: 1, messages: [] }
     channelFixture.threads.set(local.id, structuredClone(local))
-    const { runtime, emit } = createBackendChannelFixture()
+    const { runtime, emit, api } = createBackendChannelFixture()
     const accepted = await runtime.inbound('telegram', incoming())
     await settled(runtime, accepted.conversationId)
     await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledOnce())
     expect(channelFixture.threads.get('local')).toEqual(local)
     expect(channelFixture.threads.get(accepted.conversationId)).toMatchObject({ source: 'telegram', channelId: 'telegram', chatRef: '123', channelName: 'Field bot', channelSenderId: 'sender', messages: [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'Reply from agent.' }] })
-    expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ kind: 'telegram', channelId: 'telegram', chatRef: '123', conversationId: accepted.conversationId }), expect.objectContaining({ type: 'text', text: 'Reply from agent.' }), undefined)
+    expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ kind: 'telegram', channelId: 'telegram', chatRef: '123', conversationId: accepted.conversationId }), expect.objectContaining({ type: 'text', text: 'Reply from agent.' }), undefined, api)
     expect(emit).toHaveBeenCalledWith('session.changed', expect.objectContaining({ session: expect.objectContaining({ conversationId: accepted.conversationId }) }))
   })
 
@@ -39,10 +104,12 @@ describe('backend-owned remote conversations', () => {
     const accepted = await runtime.inbound('telegram', message)
     await settled(runtime, accepted.conversationId)
     await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledOnce())
+    const updatedAt = channelFixture.threads.get(accepted.conversationId)!.updatedAt
     await runtime.close()
     const restored = createBackendChannelFixture(data).runtime
     await restored.restore()
     await restored.inbound('telegram', message)
+    expect(channelFixture.threads.get(accepted.conversationId)!.updatedAt).toBe(updatedAt)
     expect(channelFixture.infer).toHaveBeenCalledOnce()
     expect(channelFixture.dispatch).toHaveBeenCalledOnce()
     expect(restored.coordinator.snapshot(accepted.conversationId)?.thread?.messages).toHaveLength(2)

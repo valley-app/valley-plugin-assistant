@@ -1,3 +1,5 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
 import path from 'path-browserify'
 import type { MessageContent, MessageDestination } from '../../contracts/channel'
 import { conversationAttachmentMetadata } from '../attachments'
@@ -6,13 +8,13 @@ import { DeliveryQueue, DeliveryRejected, type OutboundDelivery } from './delive
 import { validateContent, resolveMedia } from './capabilities'
 import { formatChannelParts } from './formatting'
 import { channelManager } from './manager'
-import { VAULT_ROOT } from '../runtime'
+import { VAULT_ROOT, backendApi } from '../runtime'
 import { effectiveSettings } from '../configuration/settings'
 import { probeLocalSticker, trustedProviderReference, type ChannelDispatchAttachment } from './mediaProbe'
 
 export class ChannelBus {
   readonly deliveries: DeliveryQueue
-  constructor(private repository: AssistantRepository, private local: (destination: MessageDestination, content: MessageContent) => Promise<string[]>) {
+  constructor(private repository: AssistantRepository, private local: (destination: MessageDestination, content: MessageContent) => Promise<string[]>, private api: OwnerApi = backendApi()) {
     this.deliveries = new DeliveryQueue(repository)
   }
   async send(input: { id: string; conversationId: string; destination: MessageDestination; content: MessageContent; triggeringCallId?: string }, retryFailed = false) {
@@ -32,22 +34,22 @@ export class ChannelBus {
     let attachment: ChannelDispatchAttachment | undefined
     if (content.type === 'attachment') {
       if (!content.attachmentId) throw new DeliveryRejected('Import the file and provide its attachment reference before sending')
-      const found = await conversationAttachmentMetadata(content.attachmentId, input.conversationId)
+      const found = await conversationAttachmentMetadata(content.attachmentId, input.conversationId, this.api)
       const media = resolveMedia(content, found.attachment.mime)
       const providerReference = await trustedProviderReference(this.repository, destination, content.attachmentId, media)
       attachment = { path: path.join(VAULT_ROOT, found.attachment.path), fileName: found.attachment.fileName, mime: found.attachment.mime, ...(providerReference ? { providerReference } : {}) }
       if (media === 'sticker') {
-        const metadata = providerReference?.metadata ?? await probeLocalSticker(found.attachment.path, found.attachment.mime)
+        const metadata = providerReference?.metadata ?? await probeLocalSticker(found.attachment.path, found.attachment.mime, this.api)
         if (destination.kind === 'telegram' && found.attachment.mime === 'image/webp' && metadata.animated) throw new DeliveryRejected('Telegram does not accept animated WebP as a sticker. Preserve the original; no conversion was performed.')
         content = { ...content, metadata }
       }
-      const limit = (await effectiveSettings(VAULT_ROOT)).importMaxBytes
+      const limit = (await effectiveSettings(VAULT_ROOT, this.api)).importMaxBytes
       for (const part of formatChannelParts(content, destination.kind)) validateContent(destination, part, part.type === 'attachment' ? { mime: found.attachment.mime, bytes: found.bytes } : undefined, limit)
     }
     const parts = formatChannelParts(content, destination.kind)
     if (!parts.length) throw new DeliveryRejected('Message is empty after channel formatting')
     for (const part of parts) validateContent(destination, part)
-    return this.deliveries.sendParts({ ...input, content, requestContent: input.content }, parts, part => destination.kind === 'chat' ? this.local(destination, part) : channelManager.dispatch(destination, part, attachment), retryFailed)
+    return this.deliveries.sendParts({ ...input, content, requestContent: input.content }, parts, part => destination.kind === 'chat' ? this.local(destination, part) : channelManager.dispatch(destination, part, attachment, this.api), retryFailed)
   }
   async retry(id: string, conversationId: string) {
     const delivery = await this.repository.get<OutboundDelivery & { conversationId?: string }>('outbound_deliveries', id)

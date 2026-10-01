@@ -69,7 +69,7 @@ export interface AiPersonalityResult extends DriverResult {
 
 /** `DriverResult` whose `data` carries the overall (all-chat) custom commands. */
 export interface AiCommandsResult extends DriverResult {
-  data?: { commands: CustomCommand[] }
+  data?: { commands: CustomCommand[]; configurationRevisions: Record<string, number> }
 }
 
 /** `DriverResult` whose `data` carries a chat's extracted long-term memory. */
@@ -137,7 +137,7 @@ export interface AiDriver {
   /** Read the aggregate Assistant config (default personality, rules, Guard, providers). */
   getConfig(): Promise<AiConfigResult>
   /** Create/overwrite a rule file `rules/<name>.md`. */
-  writeRule(name: string, content: string): Promise<DriverResult>
+  writeRule(name: string, content: string, expectedRevision?: number): Promise<DriverResult>
   /** Read the Guard policy (`guards.json`) — the single permission rule set. */
   getGuard(): Promise<AiGuardResult>
   /** Persist the Guard policy (normalized + hard-blocks re-seeded in main). */
@@ -175,11 +175,11 @@ export interface AiDriver {
   /** Create/overwrite a personality (claiming `isDefault` clears it on the rest). */
   savePersonality(personality: AiPersonality): Promise<DriverResult>
   /** Delete a personality (the `default` profile is never deletable). */
-  deletePersonality(id: string): Promise<DriverResult>
+  deletePersonality(id: string, expectedRevision?: number): Promise<DriverResult>
   /** List the overall (all-chat) user-defined custom slash-commands. */
   listCommands(): Promise<AiCommandsResult>
   /** Replace the overall custom slash-commands (main re-normalizes the list). */
-  saveCommands(commands: CustomCommand[]): Promise<DriverResult>
+  saveCommands(commands: CustomCommand[], expectedRevisions?: Record<string, number>): Promise<DriverResult>
   /** Append one extracted fact to a chat's `memory.jsonl` (guard-checked in main). */
   appendMemory(chatId: string, entry: AiMemoryEntry): Promise<DriverResult>
   /** Read a chat's extracted long-term memory. */
@@ -231,11 +231,11 @@ export interface ChannelDriver {
   /** Available channel instances with non-secret status. */
   list(): Promise<ChannelsResult>
   /** Create a new channel instance of `type` (e.g. `'telegram'` or `'whatsapp'`) with a display name. */
-  add(type: string, name: string): Promise<DriverResult & { data?: { id: string } & ChannelsInfo }>
+  add(type: string, name: string, expectedRevisions?: Record<string, number>): Promise<DriverResult & { data?: { id: string } & ChannelsInfo }>
   /** Permanently remove a channel instance (stops it, clears its token + config). */
-  remove(channelId: string): Promise<ChannelsResult>
+  remove(channelId: string, expectedRevisions?: Record<string, number>): Promise<ChannelsResult>
   /** Rename a channel instance's display name. */
-  rename(channelId: string, name: string): Promise<ChannelsResult>
+  rename(channelId: string, name: string, expectedRevisions?: Record<string, number>): Promise<ChannelsResult>
   /** Set (or clear, with `''`) a channel's secret/token — stored encrypted. */
   setSecret(channelId: string, secret: string): Promise<DriverResult>
   /** Set (or clear, with `''`) a named adapter secret such as WhatsApp verify token/app secret. */
@@ -248,6 +248,7 @@ export interface ChannelDriver {
   setConfig(
     channelId: string,
     config: {
+      name?: string
       allowFrom?: string[]
       defaultHarness?: HarnessId | null
       defaultProfile?: string | null
@@ -262,12 +263,13 @@ export interface ChannelDriver {
       graphVersion?: string | null
       webhookPort?: number | null
       publicCallbackUrl?: string | null
-    }
+    },
+    expectedRevisions?: Record<string, number>
   ): Promise<ChannelsResult>
   /** Start a channel's poll/connection loop. */
-  start(channelId: string): Promise<ChannelsResult>
+  start(channelId: string, expectedRevisions?: Record<string, number>): Promise<ChannelsResult>
   /** Stop a channel's loop. */
-  stop(channelId: string): Promise<ChannelsResult>
+  stop(channelId: string, expectedRevisions?: Record<string, number>): Promise<ChannelsResult>
   /** Send an outbound message through a channel. */
   send(channelId: string, chatRef: string, text: string): Promise<DriverResult>
   /**

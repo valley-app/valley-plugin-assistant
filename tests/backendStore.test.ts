@@ -1,3 +1,4 @@
+import { assertCommandOutput } from './commandContracts'
 import { sharedConnections, discoveredModels } from './backendFileFixture'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { promises as fs } from 'fs'
@@ -17,6 +18,8 @@ import {
   readChat,
   renameChat,
   readCommands,
+  readCommandsSnapshot,
+  readPersonality,
   readConfig,
   saveChat,
   saveCommands,
@@ -92,7 +95,9 @@ describe('assistant store', () => {
     }
     await saveChat(root, thread)
     expect(await listChats(root)).toContainEqual({ id: 'chat-1', title: 'Greeting', updatedAt: 2, preview: 'hi there' })
+    assertCommandOutput('listChats', {}, { chats: await listChats(root) })
     const read = await readChat(root, 'chat-1')
+    assertCommandOutput('readChat', {}, { thread: read })
     expect(read?.messages).toHaveLength(2)
     expect(read?.messages[1]).toMatchObject({ role: 'assistant', content: 'hi there' })
     await deleteChat(root, 'chat-1')
@@ -137,7 +142,7 @@ describe('assistant store', () => {
 
   it('round-trips overall custom commands through linked Markdown notes', async () => {
     expect(await readCommands(root)).toEqual([])
-    await saveCommands(root, [{ name: 'fieldlog', prompt: 'Summarize the habitat survey.', description: 'daily' }])
+    await saveCommands(root, [{ name: 'fieldlog', prompt: 'Summarize the habitat survey.', description: 'daily' }], (await readCommandsSnapshot(root)).configurationRevisions)
     expect(await readCommands(root)).toEqual([{ name: 'fieldlog', prompt: 'Summarize the habitat survey.', description: 'daily' }])
     const onDisk = await fs.readFile(join(root, '.valley', 'plugins', 'data', 'assistant', 'commands/fieldlog.md'), 'utf8')
     expect(onDisk).toContain('name: fieldlog')
@@ -165,6 +170,7 @@ describe('assistant store', () => {
   it('exposes a saved personality\'s instructions/routing as vault-relative paths', async () => {
     const cfg = await readConfig(root)
     await savePersonality(root, {
+      configurationRevision: (await readPersonality(root, 'default'))!.configurationRevision,
       id: 'default',
       name: 'Default',
       isDefault: true,

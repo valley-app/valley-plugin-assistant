@@ -9,5 +9,5 @@ export function VoiceOrb(input: OrbInput) {
     return () => { orb.current?.destroy(); orb.current = undefined }
   }, [])
   React.useEffect(() => { orb.current?.set(input) }, [input.state, input.input, input.output])
-  return <canvas ref={canvas} className="assistant-voice-orb" width={72} height={72} aria-hidden="true" />
+  return <canvas ref={canvas} className="assistant-voice-orb" data-state={input.state} data-error={input.state === 'error' || undefined} width={72} height={72} aria-hidden="true" />
 }

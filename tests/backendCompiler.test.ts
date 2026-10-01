@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { expect, it, vi } from 'vitest'
 import { compileUserModule } from '../src/backend/compiler'
+import { build, type BuildOptions } from 'esbuild'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const compilerLoads = vi.hoisted(() => ({ count: 0 }))
 vi.mock('typescript', async () => {
@@ -55,4 +58,27 @@ it('rejects excluded paths before asking the storage broker to read them', async
   const read = readText({})
   await expect(compileUserModule('/package/claude/provider.ts', { rootPath: '/package', readText: read })).rejects.toThrow('outside its package')
   expect(read).not.toHaveBeenCalled()
+})
+
+it('packages optional compiler and PDF libraries outside the startup graph while keeping asset bases stable', async () => {
+  const root = process.cwd(), outdir = path.join(root, 'runtime')
+  const { backendBuildOptions } = await import(pathToFileURL(path.join(root, 'build.mjs')).href) as { backendBuildOptions(root: string, directory: string): BuildOptions }
+  const output = await build({ absWorkingDir: root, bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true, metafile: true, write: false, ...backendBuildOptions(root, outdir) })
+  const files = output.metafile!.outputs
+  const entry = Object.keys(files).find(file => files[file].entryPoint === 'src/backend/index.ts')!
+  expect(entry).toBe('runtime/backend.js')
+  const visited = new Set<string>()
+  const visit = (file: string): void => {
+    if (visited.has(file)) return
+    visited.add(file)
+    for (const dependency of files[file].imports) if (dependency.kind !== 'dynamic-import' && !dependency.external) visit(dependency.path)
+  }
+  visit(entry)
+  const startupInputs = [...visited].flatMap(file => Object.keys(files[file].inputs))
+  expect(startupInputs.some(input => /node_modules\/(typescript|pdfjs-dist)\//.test(input))).toBe(false)
+  for (const name of ['typescript', 'pdfjs-dist']) expect(Object.values(files).some(file => Object.keys(file.inputs).some(input => input.includes(`node_modules/${name}/`)))).toBe(true)
+  for (const [file, metadata] of Object.entries(files)) {
+    if (Object.keys(metadata.inputs).some(input => ['src/backend/attachments/pdfPipeline.ts', 'src/backend/harness/packages.ts'].includes(input))) expect(path.dirname(file)).toBe('runtime')
+    for (const dependency of metadata.imports) if (!dependency.external) expect(files[dependency.path]).toBeDefined()
+  }
 })

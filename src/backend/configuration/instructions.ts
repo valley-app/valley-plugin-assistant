@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import path from 'path-browserify'
-import { queuedWriteJson } from '../fileQueue'
+import { backendApi } from '../runtime'
+import type { ConfigurationApi } from './documents'
 import { writeSnapshot, checkInstructionAccess, configurationPath, contentHash, noteReference, parseMarkdown, readInstructionNote, readOptional, relativeAssistantNote, utf8Size } from './markdown'
 import { clearConfigurationError, configurationDiagnostics, effectiveSettings, reportConfigurationError } from './settings'
 
@@ -33,19 +34,19 @@ export async function compileInstructionRoots(roots: string[], read: (path: stri
   return { text, bytes: utf8Size(text), hash: contentHash(JSON.stringify({ text, sources })), sources }
 }
 
-export async function compileInstructions(root: string, input: InstructionScope): Promise<InstructionBundle> {
-  const scope = scopeSchema.parse(input), settings = await effectiveSettings(root)
+export async function compileInstructions(root: string, input: InstructionScope, api: ConfigurationApi = backendApi()): Promise<InstructionBundle> {
+  const scope = scopeSchema.parse(input), settings = await effectiveSettings(root, api)
   const roots = [settings.instructions.global]
   const rulesPath = configurationPath(root, 'rules')
   try {
     const fs = await import('../filesystem')
-    for (const entry of (await fs.readdir(rulesPath, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) if (entry.isFile() && entry.name.endsWith('.md')) roots.push(relativeAssistantNote(`rules/${entry.name}`))
+    for (const entry of (await fs.readdir(rulesPath, { withFileTypes: true }, api)).sort((a, b) => a.name.localeCompare(b.name))) if (entry.isFile() && entry.name.endsWith('.md')) roots.push(relativeAssistantNote(`rules/${entry.name}`))
   } catch (error) { if ((error as { code?: string }).code !== 'ENOENT') throw error }
   const profileId = scope.profileId || settings.defaultProfileId || 'default'
   if (!/^[A-Za-z0-9][A-Za-z0-9._ -]*$/.test(profileId) || profileId.includes('..')) throw new Error('Invalid personality reference')
   if (!scope.channelReplacesPersonality) {
     const { readPersonality } = await import('../store')
-    if (!await readPersonality(root, profileId)) throw new Error(`Personality not found: ${profileId}`)
+    if (!await readPersonality(root, profileId, api)) throw new Error(`Personality not found: ${profileId}`)
     roots.push(relativeAssistantNote(`personalities/${profileId}/instructions.md`))
   }
   if (scope.source) roots.push(settings.instructions[scope.source])
@@ -62,20 +63,20 @@ export async function compileInstructions(root: string, input: InstructionScope)
   try {
     const invalidSource = configurationDiagnostics().find(diagnostic => roots.some(reference => diagnostic.path === path.join(root, noteReference(reference))))
     if (invalidSource) throw new Error(invalidSource.message)
-    const compiled = await compileInstructionRoots(roots, reference => readInstructionNote(root, reference))
+    const compiled = await compileInstructionRoots(roots, reference => readInstructionNote(root, reference, api))
     const bundle = { ...compiled, scope: key, retained: false }
-    await writeSnapshot(file, bundle)
+    await writeSnapshot(file, bundle, api)
     clearConfigurationError(key)
     return bundle
   } catch (error) {
     let previous: InstructionBundle | undefined
     try {
-      const source = await readOptional(file), parsed = source ? JSON.parse(source) as InstructionBundle : undefined
+      const source = await readOptional(file, api), parsed = source ? JSON.parse(source) as InstructionBundle : undefined
       if (parsed && parsed.scope === key && typeof parsed.text === 'string' && utf8Size(parsed.text) <= INSTRUCTION_LIMIT && Array.isArray(parsed.sources) && parsed.sources.every(item => typeof item.path === 'string' && typeof item.hash === 'string') && parsed.hash === contentHash(JSON.stringify({ text: parsed.text, sources: parsed.sources }))) previous = parsed
     } catch { /* invalid derived snapshots cannot activate */ }
-    reportConfigurationError(key, error, Boolean(previous))
+    reportConfigurationError(key, error, Boolean(previous), api)
     if (!previous) throw error
-    for (const source of previous.sources) await checkInstructionAccess(source.path)
+    for (const source of previous.sources) await checkInstructionAccess(source.path, api)
     return { ...previous, retained: true, error: error instanceof Error ? error.message : String(error) }
   }
 }

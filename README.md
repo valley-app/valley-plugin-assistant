@@ -2,6 +2,8 @@
 
 Assistant provides Chat conversations and Projects. A Project shares selected working folders and instructions across conversations; folders can be outside the vault. Files are edited directly through core Guards. Removing a folder revokes access and stops its work. Deleting a project preserves files and converts its conversations to standalone Chats.
 
+AI Providers and Usage & Tokens live in core Artificial Intelligence settings. MCP connections also live there: each remote or local connection has its own account identity and encrypted credentials. Assistant discovers lightweight command summaries with `command_list`, loads only a selected schema with `command_describe`, and calls its exact ID with `command_execute`. For MCP it first lists `mcp:connections`, selects the requested account, then discovers that connection’s `mcp:tools`. Remote tool names and content never override conversation instructions. Unknown write outcomes require reconciliation before retrying.
+
 AI Providers and Usage & Tokens live in main Settings beside Accounts. Core owns provider requests, credentials, budgets, and global Guards; these remain available with Assistant disabled. Other plugins use the typed `api.ai` service. Assistant retains conversation and channel rules.
 
 Every conversation uses the bundled DeepSeek-based coding harness with its selected model. Saved older harness selections do not change execution. New chats remain in memory until their first submitted message or queued turn; empty stored conversations are hidden without deleting their data. Native runtimes are available on supported Macs; every turn starts an isolated session reconstructed from retained history. Runtime-specific adapters live in this package and use core transport and guarded execution.
@@ -48,6 +50,8 @@ Existing IDs, model selections, explicit attachment destinations, and resolvable
 The package’s `manifest.name` and `manifest.description` catalog entries translate its identity, including while disabled. Missing translations fall back to this package’s English catalog. A plugin never falls back to Valley’s catalog or another plugin’s catalog.
 
 ## Chat appearance
+
+The right sidebar has Chat, Telegram and WhatsApp icons beside Voice in its persistent top header. Its chat list, search, projects, conversation, voice and conversation settings work without opening the main workspace. Back returns to the list; drafts stay with their conversation.
 
 The composer and messages use Valley’s shared light/dark theme directly. The background uses `--surface-color-alt`; messages use `--content-text`, `--content-muted`, and `--surface-raised`. Elevated inputs use `--input-elevated-{bg,border,placeholder,shadow}`, menus use `--menu-glass-{bg,border,shadow}`, and actions use `--hover-bg-strong`, `--button-contrast-{bg,text}`, and `--warning-strong-color`. These semantic tokens cross the sandbox style contract and remain theme-overridable. There is no separate plugin palette or duplicated color fallback. Bubble typography, spacing, and composer geometry are unchanged.
 

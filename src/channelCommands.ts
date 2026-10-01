@@ -34,7 +34,7 @@ export function parseCommand(text: string): ParsedCommand | null {
  * offline / with no provider configured). A user-defined custom command can never
  * shadow these. `/reset` is an alias of `/clear`.
  */
-export const BUILTIN_COMMANDS: readonly string[] = ['help', 'clear', 'reset', 'model', 'profile', 'guard']
+export const BUILTIN_COMMANDS: readonly string[] = ['start', 'help', 'clear', 'reset', 'model', 'profile', 'guard']
 
 export function isBuiltinCommand(name: string): boolean {
   return BUILTIN_COMMANDS.includes(name.toLowerCase())

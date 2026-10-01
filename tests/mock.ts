@@ -197,7 +197,7 @@ export function createMockValleyApi(options: MockOptions = {}) {
         },
         listCommands: async () => {
           await recordDriver('ai', 'listCommands', {})
-          return { ok: true, data: { commands: [...overallCommands] } }
+          return { ok: true, data: { commands: [...overallCommands], configurationRevisions: { 'commands.md': 0 } } }
         },
         saveCommands: async (commands) => {
           const result = await recordDriver('ai', 'saveCommands', { commands })

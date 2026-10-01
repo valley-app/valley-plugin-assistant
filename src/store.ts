@@ -89,6 +89,10 @@ interface ActiveRun {
 }
 
 export interface AssistantSnapshot {
+  sessionState?: SessionSnapshot['state']
+  runningChatCount?: number
+  voiceConversationId?: string
+  busyChatIds?: string[]
   ready: boolean
   config: AssistantConfig | null
   threads: AiChatSummary[]
@@ -120,7 +124,9 @@ function newThreadId(): string {
 
 function titleFrom(text: string): string {
   const t = text.trim().replace(/\s+/g, ' ')
-  return t.length > 48 ? `${t.slice(0, 48)}…` : t || 'New chat'
+  const compact = t.split(' ').slice(0, 4).join(' ')
+  const title = [...compact].slice(0, 32).join('')
+  return title + (title.length < t.length ? '…' : '') || 'New chat'
 }
 
 /** Base64-encode bytes in chunks (avoids a stack overflow on a large image). */
@@ -157,7 +163,9 @@ interface StableState {
 
 class AssistantStore {
   readonly api: ValleyPluginApi
+  private voiceConversationId?: string
   private sessions = new Map<string, SessionSnapshot>()
+  private deliveryErrors = new Map<string, string>()
   private offConversations: (() => void) | null = null
   private offSessions: (() => void) | null = null
   private offBackendErrors: Array<() => void> = []
@@ -168,6 +176,7 @@ class AssistantStore {
   private offChannel: (() => void) | null = null
   private offGuard: (() => void) | null = null
   private offToolProviders: (() => void) | null = null
+  private offConfiguration: (() => void) | null = null
   /** One in-flight turn per chat thread id (per-chat serialization, cross-chat concurrency). */
   private runs = new Map<string, ActiveRun>()
   private processingMessages = new Set<string>()
@@ -184,6 +193,11 @@ class AssistantStore {
   private preparing = false
   private disposed = false
   private unloadPreparation: Promise<void> | null = null
+  private configurationLoaded = false
+  private initializationPending = false
+  private initializationError: string | undefined
+  private initializationRetries = 0
+  private initializationRetry: ReturnType<typeof setTimeout> | undefined
   private approvals: ReturnType<typeof createApprovalOwner>
   private disposal: Promise<void> | undefined
   /** Per-chat guard narrowing ("Always allow/ask/block here") — persisted to guard-overrides.json. */
@@ -235,7 +249,7 @@ class AssistantStore {
     })
     this.offSessions = api.backend.on('session.changed', value => this.acceptSession((value as { session: SessionSnapshot }).session))
     this.offBackendErrors = [
-      api.backend.on('delivery.error', value => { const event = value as { conversationId: string; error: string }; this.state.error = `${event.conversationId}: ${event.error}`; this.notify() }),
+      api.backend.on('delivery.error', value => { const event = value as { conversationId: string; error: string }; this.deliveryErrors.set(event.conversationId, event.error); this.notify() }),
       api.backend.on('configuration.error', value => { const event = value as { path: string; message: string }; this.state.error = `${event.path}: ${event.message}`; this.notify() }),
       api.backend.on('backendError', value => { this.state.error = String(value); this.notify() })
     ]
@@ -251,24 +265,59 @@ class AssistantStore {
         await this.reloadThreads()
       })().catch(error => { this.state.error = String(error); this.notify() })
     })
-    this.whenReady = this.init().catch(error => {
-      this.state.error = error instanceof Error ? error.message : String(error)
-      this.notify()
-      throw error
+    this.offConfiguration = api.settings.subscribe(() => {
+      if (!this.configurationLoaded && this.initializationError && !this.initializationPending && !this.preparing && !this.disposed) {
+        this.whenReady = this.initialize()
+      }
     })
-    void this.whenReady.catch(() => {})
+    this.whenReady = this.initialize()
   }
 
   private acceptSession(session: SessionSnapshot): void {
     if (this.disposed || (this.sessions.get(session.conversationId)?.revision ?? -1) > session.revision) return
     this.sessions.set(session.conversationId, session)
     if (session.thread && this.state.active?.id === session.conversationId) this.state.active = { ...session.thread, pendingMessages: session.queue.map(turn => ({ id: turn.id, text: turn.text, attachments: turn.attachments })) }
-    if (session.error) this.state.error = session.error
+    if (!['IDLE', 'FAILED', 'INTERRUPTED'].includes(session.state)) this.deliveryErrors.delete(session.conversationId)
     if (['IDLE', 'FAILED', 'AWAITING_QUESTION', 'INTERRUPTED'].includes(session.state)) void this.reloadThreads().catch(() => {})
     this.notify()
   }
 
-  readonly whenReady: Promise<void>
+  whenReady: Promise<void>
+
+  private initialize(): Promise<void> {
+    clearTimeout(this.initializationRetry)
+    this.initializationRetry = undefined
+    this.initializationPending = true
+    const previousError = this.initializationError
+    const ready = this.init().then(() => {
+      if (this.disposed || !this.state.ready) return
+      this.initializationError = undefined
+      if (previousError && this.state.error === previousError) this.state.error = null
+      this.notify()
+    }).catch(error => {
+      this.initializationError = error instanceof Error ? error.message : String(error)
+      this.state.error = this.initializationError
+      this.notify()
+      throw error
+    }).finally(() => {
+      this.initializationPending = false
+      this.scheduleInitializationRetry()
+    })
+    void ready.catch(() => {})
+    return ready
+  }
+
+  private scheduleInitializationRetry(): void {
+    if (this.configurationLoaded || !this.initializationError || this.initializationPending || this.preparing || this.disposed || this.initializationRetry !== undefined) return
+    const delay = [250, 1000, 3000][this.initializationRetries]
+    if (delay === undefined) return
+    this.initializationRetry = setTimeout(() => {
+      this.initializationRetry = undefined
+      if (this.preparing || this.disposed) return
+      this.initializationRetries++
+      this.whenReady = this.initialize()
+    }, delay)
+  }
 
   subscribe = (cb: () => void): (() => void) => {
     this.listeners.add(cb)
@@ -276,6 +325,18 @@ class AssistantStore {
   }
 
   getSnapshot = (): AssistantSnapshot => this.snap
+
+  openVoice(openMainTab = true): void {
+    if (!this.state.active || this.state.active.source) this.newChat()
+    this.voiceConversationId = this.state.active?.id
+    if (openMainTab) this.api.workspace.openMainTab()
+    this.notify()
+  }
+
+  closeVoice(): void {
+    this.voiceConversationId = undefined
+    this.notify()
+  }
 
   private policy(): GuardPolicy {
     return this.state.config?.guard ?? FALLBACK_GUARD
@@ -296,10 +357,21 @@ class AssistantStore {
       activeId != null
         ? this.approvals.activeRequest(activeId)
         : null
+    const threads = new Map(this.state.threads.map(thread => [thread.id, thread]))
+    for (const value of this.sessions.values()) {
+      const thread = value.thread
+      if (!thread || ['IDLE', 'FAILED', 'INTERRUPTED'].includes(value.state)) continue
+      const preview = [...thread.messages].reverse().find(message => ['user', 'assistant'].includes(message.role) && message.content && !message.toolCalls?.length)
+      threads.set(thread.id, { ...threads.get(thread.id), id: thread.id, title: thread.title, updatedAt: thread.updatedAt, projectId: thread.projectId, source: thread.source, channelId: thread.channelId, channelName: thread.channelName, channelIdentity: thread.channelIdentity, pinned: thread.pinned, preview: (preview?.displayContent || preview?.content || value.queue[0]?.text || '').slice(0, 256) })
+    }
     return {
+      sessionState: session?.state,
+      runningChatCount: new Set([...this.sessions.values()].filter(value => !['IDLE', 'FAILED', 'INTERRUPTED', 'QUEUED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)).map(value => value.conversationId).concat([...this.runs.keys()])).size,
+      voiceConversationId: this.voiceConversationId,
+      busyChatIds: [...new Set([...this.sessions.values()].filter(value => !['IDLE', 'FAILED', 'INTERRUPTED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)).map(value => value.conversationId).concat([...this.runs.keys()], [...this.processingMessages]))],
       ready: this.state.ready,
       config: this.state.config,
-      threads: [...this.state.threads],
+      threads: [...threads.values()],
       active: this.state.active ? { ...this.state.active, messages: [...this.state.active.messages] } : null,
       busy: [...this.sessions.values()].some(value => !['IDLE','FAILED','INTERRUPTED','AWAITING_QUESTION','AWAITING_APPROVAL'].includes(value.state)) || this.runs.size > 0 || this.processingMessages.size > 0,
       activeBusy: Boolean(sessionBusy || activeRun) || this.processingMessages.has(activeId ?? '') || this.preparing,
@@ -311,7 +383,7 @@ class AssistantStore {
       lastModel: this.state.lastModel,
       pending,
       dangerous: this.state.config?.guard.dangerousMode ?? null,
-      error: this.state.error,
+      error: session?.error || this.deliveryErrors.get(activeId ?? '') || this.state.error || (!this.state.ready ? this.initializationError ?? null : null),
       canGoBack: this.chatHistoryIndex > 0,
       canGoForward: this.chatHistoryIndex < this.chatHistory.length - 1
     }
@@ -374,11 +446,13 @@ class AssistantStore {
 
   private async flushForUnload(): Promise<void> {
     this.preparing = true
+    clearTimeout(this.initializationRetry)
+    this.initializationRetry = undefined
     this.approvals.pause()
     this.notify()
     const retry = [...this.dirtyThreads.values()].filter((thread) => this.failedThreads.has(thread.id))
     try {
-      await this.whenReady
+      try { await this.whenReady } catch (error) { if (this.configurationLoaded) throw error }
       for (const [id] of [...this.runs]) this.stop(id)
       while (this.pendingWork.size || this.pendingSaves.size) await Promise.allSettled([...this.pendingWork, ...this.pendingSaves])
       for (const thread of retry) {
@@ -398,17 +472,23 @@ class AssistantStore {
     this.approvals.resume()
     this.notify()
     this.drainChannelQueue()
+    if (!this.configurationLoaded && !this.initializationPending && !this.initializationError) this.whenReady = this.initialize()
+    else this.scheduleInitializationRetry()
   }
 
   hasUserSelection = false
 
   private async init(): Promise<void> {
     await assistantConfigurationReady(this.api)
+    if (this.disposed || this.preparing) return
+    this.configurationLoaded = true
     await this.reloadConfig()
     await this.reloadThreads()
-    if (this.state.threads[0]) await this.openChat(this.state.threads[0].id, false)
-    else this.newChat(undefined, false)
-    if (this.state.active) this.pushChatHistory(this.state.active.id)
+    if (!this.hasUserSelection) {
+      if (this.state.threads[0]) await this.openChat(this.state.threads[0].id, false)
+      else this.newChat(undefined, false)
+      if (this.state.active) this.pushChatHistory(this.state.active.id)
+    }
     if (this.disposed) return
     await this.approvals.recover()
     if (this.disposed) return
@@ -439,6 +519,7 @@ class AssistantStore {
 
   /** A new in-app chat, seeded from the Chat settings' defaults for new chats. */
   newChat(projectId?: string, userInitiated = true): void {
+    this.voiceConversationId = undefined
     if (userInitiated) this.hasUserSelection = true
     const now = Date.now()
     const settings = this.api.settings.get()
@@ -471,11 +552,14 @@ class AssistantStore {
   }
 
   async openChat(id: string, recordHistory = true): Promise<boolean> {
+    if (id !== this.state.active?.id) this.voiceConversationId = undefined
     if (recordHistory) this.hasUserSelection = true
     // If this thread is mid-run, show the live in-memory copy (stays in sync).
-    const thread = this.runs.get(id)?.thread ?? this.unsavedThreads.get(id) ?? this.dirtyThreads.get(id)
+    const session = this.sessions.get(id)
+    const live = session && !['IDLE', 'FAILED', 'INTERRUPTED'].includes(session.state) ? session : undefined
+    const thread = live?.thread ?? this.runs.get(id)?.thread ?? this.unsavedThreads.get(id) ?? this.dirtyThreads.get(id)
     if (thread) {
-      this.state.active = thread
+      this.state.active = live ? { ...thread, pendingMessages: live.queue.map(turn => ({ id: turn.id, text: turn.text, attachments: turn.attachments })) } : thread
       if (recordHistory) this.pushChatHistory(id)
       this.notify()
       return true
@@ -517,6 +601,11 @@ class AssistantStore {
   }
 
   async renameChat(id: string, title: string): Promise<void> {
+    const draft = this.unsavedThreads.get(id)
+    if (draft) {
+      await this.saveThread({ ...draft, title, titleOrigin: 'manual', titleRevision: (draft.titleRevision ?? 0) + 1 })
+      return
+    }
     const result = await this.api.assistant.renameChat(id, title)
     if (!result.ok) throw new Error(result.error || 'Assistant chat rename failed')
     const renamed = (thread: AiChatThread): AiChatThread => ({ ...thread, ...(thread.source ? { channelIdentity: thread.channelIdentity || thread.title } : {}), title })
@@ -534,6 +623,8 @@ class AssistantStore {
   }
 
   async setPinned(id: string, pinned: boolean): Promise<void> {
+    const draft = this.unsavedThreads.get(id)
+    if (draft) { await this.saveThread({ ...draft, pinned }); return }
     const result = await this.api.assistant.setChatPinned(id, pinned)
     if (!result.ok) throw new Error(result.error || 'Assistant chat update failed')
     const dirty = this.dirtyThreads.get(id)
@@ -541,6 +632,9 @@ class AssistantStore {
       this.dirtyThreads.set(id, { ...dirty, pinned })
       this.failedThreads.add(id)
     }
+    const run = this.runs.get(id)
+    if (run) run.thread.pinned = pinned
+    if (this.state.active?.id === id) this.state.active = { ...this.state.active, pinned }
     await this.reloadThreads()
   }
 
@@ -1499,6 +1593,8 @@ class AssistantStore {
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal
     this.disposed = true
+    clearTimeout(this.initializationRetry)
+    this.initializationRetry = undefined
     this.approvals.pause()
     this.offSessions?.(); this.offSessions = null
     for (const off of this.offBackendErrors) off()
@@ -1511,6 +1607,7 @@ class AssistantStore {
     this.offGuard = null
     this.offToolProviders?.()
     this.offToolProviders = null
+    this.offConfiguration?.(); this.offConfiguration = null
     for (const run of this.runs.values()) {
       run.cancelled = true
       run.controller.abort()

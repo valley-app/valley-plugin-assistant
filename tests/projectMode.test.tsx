@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ProjectMode, projectSelection } from '../src/ProjectMode'
 import { ProjectsPane } from '../src/Settings'
 import { initRuntime } from '../src/runtime'
@@ -58,8 +58,13 @@ it('expands a project without creating a chat and exposes folders only through s
   expect(screen.queryByDisplayValue('Observe moss.')).toBeNull()
   render(<ProjectsPane />)
   expect(await screen.findByText('Project instructions')).toBeInTheDocument()
-  expect(screen.queryByDisplayValue('Observe moss.')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+  expect(screen.getByRole('textbox', { name: 'Project instructions' })).toHaveValue('Observe moss.')
+  expect(screen.queryByRole('button', { name: 'Open' })).toBeNull()
+  fireEvent.change(screen.getByRole('textbox', { name: 'Project instructions' }), { target: { value: 'Verify moss observations.' } })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })) })
+  expect(api.backend.call).toHaveBeenCalledWith('projects.request', { method: 'update', payload: { id: 'forest', name: 'Forest', instructions: 'Verify moss observations.' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Manage project' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Open' }))
   expect(api.workspace.openFile).toHaveBeenCalledWith('.valley/plugins/data/assistant/config/projects/forest.md')
   expect(screen.getByRole('button', { name: 'Add folder' })).toBeTruthy()
 })

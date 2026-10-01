@@ -1,3 +1,5 @@
+import type { PluginBackendApi } from '@valley/plugin-sdk'
+import { initBackend } from '../../src/backend/runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { dispatchTelegram } from '../../src/backend/channels/adapters/telegram'
 import { dispatchWhatsApp } from '../../src/backend/channels/adapters/whatsapp'
@@ -5,6 +7,7 @@ import { dispatchWhatsApp } from '../../src/backend/channels/adapters/whatsapp'
 const transport = vi.hoisted(() => ({ telegram: vi.fn(), whatsapp: vi.fn(), upload: vi.fn() }))
 vi.mock('../../src/backend/channels/network', () => ({ telegramFetch: transport.telegram, whatsappFetch: transport.whatsapp, uploadFile: transport.upload }))
 beforeEach(() => {
+  initBackend({} as PluginBackendApi)
   transport.telegram.mockReset().mockImplementation(async () => new Response(JSON.stringify({ ok: true, result: { message_id: 3 } })))
   transport.whatsapp.mockReset().mockImplementation(async () => new Response(JSON.stringify({ messages: [{ id: 'out' }] })))
   transport.upload.mockReset()

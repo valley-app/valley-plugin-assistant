@@ -24,15 +24,18 @@ const root = '.valley/plugins/data/assistant'
 function createMockValleyApi(options: Parameters<typeof createBaseMock>[0] = {}) {
   const mock = createBaseMock(options), original = mock.api.backend.call.bind(mock.api.backend)
   mock.api.backend.call = vi.fn(async (method: string, input?: unknown) => {
-    if (method === 'configuration.settings') return settingsSchema.parse(mock.api.settings.get())
-    if (method === 'configuration.speech') return speechSchema.parse({})
+    if (method === 'configuration.settings') return { revision: 0, values: settingsSchema.parse(mock.api.settings.get()) }
+    if (method === 'configuration.speech') return { revision: 0, values: speechSchema.parse({}) }
+    if (method === 'configuration.set') { const { key, value } = input as { key: string; value: unknown }; await mock.api.settings.set(key, value); return { revision: 0, values: settingsSchema.parse(mock.api.settings.get()) } }
+    if (method === 'configuration.note') return { path: `${root}/instructions/global.md`, body: 'Discover tools and read plugin help.', includes: [], revision: 0, hash: 'a'.repeat(64), settingsRevision: 0 }
+    if (method === 'configuration.note.set') return { ...(input as object), path: `${root}/instructions/global.md` }
     if (method === 'configuration.status') {
       const scope = input as { scope?: string; id?: string }
       const notes = scope.scope === 'conversation' ? [{ id: 'conversation', group: 'instructions', path: `${root}/chats/${scope.id}/settings.md` }]
         : scope.scope === 'channel' ? [{ id: 'channel', group: 'instructions', path: `${root}/config/channels/${scope.id}.md` }]
         : scope.scope === 'chat' ? [{ id: 'defaults', group: 'files', path: `${root}/settings.md` }, { id: 'chatNaming', group: 'instructions', key: 'chatNaming', path: `${root}/instructions/chat-naming.md` }]
         : [{ id: 'home', group: 'files', path: `${root}/README.md` }, { id: 'global', group: 'instructions', key: 'global', path: `${root}/instructions/global.md` }]
-      return { notes, diagnostics: [] }
+      return { notes, diagnostics: [], settingsRevision: 0 }
     }
     return original(method, input)
   }) as typeof mock.api.backend.call
@@ -81,23 +84,41 @@ async function mountSection(
   const { container } = render(<Settings section={section} />)
   await waitFor(() => expect(container.querySelector('.assistant-settings')?.textContent).toBeTruthy())
   if (section === 'chat') await screen.findByLabelText('Attachment folder')
-  if (section === 'settings') await screen.findByText('Global instructions')
+  if (section === 'settings') await screen.findByRole('switch', { name: 'Show Telegram in sidebar' })
   return { container, mock }
 }
 
 describe('assistant settings — parent pane', () => {
-  it('separates general instructions and speech from native chat preferences', async () => {
+  it('offers dedicated instruction and voice subsettings in General', async () => {
     const { container } = await mountSection('settings')
     expect(container.textContent).toContain('Personalities')
-    expect(screen.getByLabelText('Voice provider')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Voice Provider/ })).toBeTruthy()
+    expect(screen.queryByLabelText('Voice provider')).toBeNull()
     expect(screen.queryByLabelText('Attachment reader')).toBeNull()
     expect(container.textContent).not.toContain('Defaults and appearance')
   })
 
-  it('opens instruction notes from grouped native controls', async () => {
-    const { mock } = await mountSection('settings')
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open' })[0])
+  it('edits instructions on a dedicated page and keeps the source note accessible', async () => {
+    const { mock } = await mountSection('instructions')
+    fireEvent.click(await screen.findByText('Global instructions'))
+    const editor = await screen.findByRole('textbox', { name: 'Instructions' })
+    expect(editor).toHaveValue('Discover tools and read plugin help.')
+    expect(screen.queryByRole('combobox', { name: 'Additional instruction notes' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Additional instruction notes' }))
+    expect(screen.getByRole('combobox', { name: 'Additional instruction notes' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Additional instruction notes' }))
+    expect(screen.queryByRole('combobox', { name: 'Additional instruction notes' })).toBeNull()
+    fireEvent.change(editor, { target: { value: 'Read plugin help and verify results.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mock.api.backend.call).toHaveBeenCalledWith('configuration.note.set', expect.objectContaining({ body: 'Read plugin help and verify results.', expectedRevision: 0 })))
+    fireEvent.click(screen.getByRole('button', { name: 'Open instruction note' }))
     expect(mock.api.workspace.openFile).toHaveBeenCalledWith(`${root}/instructions/global.md`)
+  })
+
+  it('renders the voice provider only in its own subsetting', async () => {
+    await mountSection('voice')
+    expect(await screen.findByLabelText('Voice provider')).toBeTruthy()
+    expect(screen.queryByLabelText('Attachment folder')).toBeNull()
   })
 
   it('leaves subscription controls to Home', async () => {
@@ -107,9 +128,10 @@ describe('assistant settings — parent pane', () => {
     expect(screen.queryByLabelText('Claude')).toBeNull()
   })
 
-  it('keeps Chat visibility controls out of General', async () => {
-    await mountSection('settings')
-    expect(screen.queryByLabelText('Show Telegram in sidebar')).toBeNull()
+  it('saves channel visibility in General', async () => {
+    const { mock } = await mountSection('settings')
+    await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show Telegram in sidebar' })) })
+    expect(mock.api.settings.get().showTelegram).toBe(false)
   })
 })
 
@@ -153,14 +175,13 @@ describe('assistant settings — channel list page', () => {
     expect(container.querySelectorAll('.settings-list-row').length).toBe(1)
   })
 
-  it('stores only credentials through the secret control and opens behavior in Markdown', async () => {
+  it('keeps connection Settings focused on credentials and identity', async () => {
     const { container, mock } = await mountSection('telegram', { channels: [channel('telegram', 'Field bot')] })
     fireEvent.click(await screen.findByText('Field bot'))
     const token = await screen.findByLabelText('Bot token')
     expect(token).toHaveAttribute('type', 'password')
-    expect(await screen.findByText('Connection instructions')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
-    expect(mock.api.workspace.openFile).toHaveBeenCalledWith(`${root}/config/channels/telegram.md`)
+    expect(screen.queryByText('Connection instructions')).toBeNull()
+    expect(screen.queryByLabelText('Default model')).toBeNull()
     fireEvent.change(token, { target: { value: 'fixture-token' } })
     await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: 'Save' }).find(button => !(button as HTMLButtonElement).disabled)!) })
     expect(mock.driverCalls).toContainEqual(expect.objectContaining({ method: 'setSecret', payload: { channelId: 'telegram', secret: 'fixture-token' } }))
@@ -168,17 +189,27 @@ describe('assistant settings — channel list page', () => {
     expect(container.querySelectorAll('textarea')).toHaveLength(0)
   })
 
+  it('places a single save button and normalized red errors after connection fields', async () => {
+    const { container } = await mountSection('telegram', { channels: [channel('telegram', 'Field bot', { error: "Error: Error invoking remote method 'plugins:callBackend': Error: Telegram failed (404)" })] })
+    fireEvent.click(await screen.findByText('Field bot'))
+    expect(screen.getAllByRole('button', { name: 'Save' })).toHaveLength(1)
+    const footer = container.querySelector('.assistant-connection-footer')!
+    expect(footer.querySelector('button')).toHaveClass('assistant-connection-save')
+    expect(footer.querySelector('[role="alert"]')).toHaveTextContent('Telegram failed (404)')
+    expect(footer.querySelector('[role="alert"]')).not.toHaveTextContent('remote method')
+  })
+
   it('saves connection names and allowed senders through the existing channel API', async () => {
     const { mock } = await mountSection('telegram', { channels: [channel('telegram', 'Field bot', { allowFrom: ['fern'] })] })
     fireEvent.click(await screen.findByText('Field bot'))
     const name = await screen.findByRole('textbox', { name: 'Name' })
     fireEvent.change(name, { target: { value: 'Meadow bot' } })
-    await act(async () => { fireEvent.blur(name) })
-    expect(mock.driverCalls).toContainEqual(expect.objectContaining({ method: 'rename', payload: { channelId: 'telegram', name: 'Meadow bot' } }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })) })
+    expect(mock.driverCalls).toContainEqual(expect.objectContaining({ method: 'setConfig', payload: expect.objectContaining({ channelId: 'telegram', config: expect.objectContaining({ name: 'Meadow bot' }) }) }))
     const senders = screen.getByRole('textbox', { name: 'Allowed senders' })
     fireEvent.change(senders, { target: { value: 'fern, moss' } })
-    await act(async () => { fireEvent.blur(senders) })
-    expect(mock.driverCalls).toContainEqual(expect.objectContaining({ method: 'setConfig', payload: { channelId: 'telegram', config: { allowFrom: ['fern', 'moss'] } } }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save' })) })
+    expect(mock.driverCalls).toContainEqual(expect.objectContaining({ method: 'setConfig', payload: expect.objectContaining({ channelId: 'telegram', config: expect.objectContaining({ allowFrom: ['fern', 'moss'] }) }) }))
   })
 
   it('reaches a connection detail with the keyboard', async () => {
@@ -291,19 +322,18 @@ describe('assistant settings — chat pane', () => {
 
   it('edits new-chat defaults without duplicating General instruction and speech groups', async () => {
     const { container, mock } = await mountSection('chat')
-    expect(container.textContent).toContain('Defaults and appearance')
+    expect(container.textContent).toContain('New chats')
     expect(screen.queryByLabelText('Voice provider')).toBeNull()
     expect(screen.queryByText('Global instructions')).toBeNull()
-    const visible = screen.getByRole('switch', { name: 'Show Telegram in sidebar' })
-    await act(async () => { fireEvent.click(visible) })
-    expect(mock.api.settings.get().showTelegram).toBe(false)
+    expect(screen.queryByRole('switch', { name: 'Show Telegram in sidebar' })).toBeNull()
     expect(mock.chatThreads.size).toBe(0)
   })
   it('opens chat configuration without listing conversations', async () => {
     const { container, mock } = await mountSection('chat')
     expect(container.querySelector('.settings-list-row')).toBeNull()
-    fireEvent.click(screen.getAllByRole('button', { name: 'Open' })[1])
-    expect(mock.api.workspace.openFile).toHaveBeenCalledWith(`${root}/settings.md`)
+    vi.spyOn(mock.api.files, 'revealInFinder')
+    fireEvent.click(screen.getByRole('button', { name: 'Show folder' }))
+    expect(mock.api.files.revealInFinder).toHaveBeenCalledWith(`${root}/chats`)
   })
 
   it('retains a failed preference draft and reports the error', async () => {

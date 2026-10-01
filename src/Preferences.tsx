@@ -1,9 +1,9 @@
 import { React, api } from './runtime'
 import { uiText } from './localization'
 import { flattenModels } from './models'
-import { FolderOpen, Plus, Trash, X } from './icons'
+import { FolderOpen, Plus, Trash, X, Warning } from './icons'
 import type { AiConnectionStatus, AiPersonality } from './types'
-import type { MarkdownSettings } from './backend/configuration/settings'
+import type { MarkdownSettings, SettingsDocument } from './backend/configuration/settings'
 import type { SpeechSettings } from './backend/configuration/schemas'
 import type { SpeechVoice } from '@valley/plugin-sdk/speech'
 
@@ -13,7 +13,33 @@ export const Button: typeof api.ui.settings.Button = props => React.createElemen
 export const Select: typeof api.ui.settings.SelectField = props => <div className="settings-row-control assistant-native-field">{React.createElement(api.ui.settings.SelectField, props)}</div>
 export const Toggle: typeof api.ui.settings.Toggle = props => React.createElement(api.ui.settings.Toggle, props)
 export const Section = ({ title, children }: { title: string; children: React.ReactNode }) => <section className="assistant-preference-section"><h4 className="settings-label">{title}</h4>{children}</section>
-export const Status = ({ loading, pending, error }: { loading?: boolean; pending?: boolean; error?: string }) => <>{(loading || pending) && <p className="settings-description" role="status">{words(loading ? 'loading' : 'saving')}</p>}{error && <p className="assistant-set-err" role="alert">{error}</p>}</>
+export function cleanErrorMessage(error: string): string {
+  let message = error.trim()
+  for (let i = 0; i < 8; i++) {
+    const next = message.replace(/^(?:Error:\s*|Error invoking remote method ['"][^'"]+['"]:\s*)/, '').trim()
+    if (next === message) break
+    message = next
+  }
+  return message
+}
+
+export function ErrorNotice({ error, context }: { error: string; context?: 'telegram' | 'whatsapp' }) {
+  const message = cleanErrorMessage(error)
+  const missingToken = message.startsWith(uiText('assistant.backend.missingToken', { value: '' }).trim())
+  let validation = false
+  let validationMessage = ''
+  try {
+    const value = JSON.parse(message)
+    validation = Array.isArray(value) && value.length > 0 && value.every(item => item && typeof item.code === 'string' && typeof item.message === 'string' && Array.isArray(item.path))
+    if (validation) validationMessage = value.every((item: { code: string; path: unknown[] }) => item.code === 'unrecognized_keys' && item.path[0] === 'tools')
+      ? uiText('assistant.notice.invalidRequest')
+      : [...new Set(value.map((item: { message: string; path: unknown[] }) => `${item.path.join(' · ')}: ${item.message}`))].slice(0, 3).join('\n')
+  } catch { /* Ordinary errors remain readable text. */ }
+  const summary = missingToken ? uiText('assistant.notice.tokenHelp') : validation ? validationMessage : message.length > 500 ? message.slice(0, 320) + '…' : message
+  return <div className="assistant-error-notice" role="alert"><Warning /><div className="assistant-error-notice-content"><strong>{uiText('assistant.notice.title')}{missingToken ? ` · ${uiText(context === 'telegram' ? 'assistant.notice.botTokenTitle' : 'assistant.notice.tokenTitle')}` : ''}</strong><p>{summary}</p>{(validation || message.length > 500) && <details><summary>{uiText('assistant.notice.details')}</summary><pre>{message}</pre></details>}</div></div>
+}
+
+export const Status = ({ loading, pending, error, context }: { loading?: boolean; pending?: boolean; error?: string; context?: 'telegram' | 'whatsapp' }) => <>{(loading || pending) && <p className="settings-description" role="status">{words(loading ? 'loading' : 'saving')}</p>}{error && <ErrorNotice error={error} context={context} />}</>
 
 export function useSettingsResource<T>(read: () => Promise<T>) {
   const [value, setValue] = React.useState<T>(), [error, setError] = React.useState(''), [pending, setPending] = React.useState(false)
@@ -21,7 +47,7 @@ export function useSettingsResource<T>(read: () => Promise<T>) {
   const refresh = React.useCallback(async () => {
     const id = ++generation.current
     try { const next = await read(); if (mounted.current && id === generation.current) { setValue(next); setError('') } }
-    catch (error) { if (mounted.current && id === generation.current) setError(String(error)) }
+    catch (error) { if (mounted.current && id === generation.current) { setValue(undefined); setError(String(error)) } }
   }, [read])
   React.useEffect(() => {
     mounted.current = true
@@ -43,14 +69,14 @@ export function useSettingsResource<T>(read: () => Promise<T>) {
 
 export function SavedText({ value, label, disabled, onSave, type = 'text' }: { value: string; label: string; disabled?: boolean; onSave(value: string): Promise<unknown>; type?: 'text' | 'password' }) {
   const [draft, setDraft] = React.useState(value), [dirty, setDirty] = React.useState(false)
-  const committing = React.useRef(false)
+  const committing = React.useRef(false), saveDraft = React.useRef(onSave)
   React.useEffect(() => { if (!dirty) setDraft(value) }, [value, dirty])
   const commit = async () => {
     if (!dirty || disabled || committing.current) return
     committing.current = true
-    try { if (await onSave(draft) !== false) setDirty(false) } finally { committing.current = false }
+    try { if (await saveDraft.current(draft) !== false) setDirty(false) } finally { committing.current = false }
   }
-  return <div className="settings-row-control assistant-preference-control"><api.ui.settings.TextField ariaLabel={label} value={draft} type={type} disabled={disabled} onChange={next => { setDraft(next); setDirty(next !== value) }} onCommit={() => { void commit() }} /><Button size="small" disabled={disabled || !dirty} onClick={() => void commit()}>{uiText('auto.efc007a393f6')}</Button></div>
+  return <div className="settings-row-control assistant-preference-control"><api.ui.settings.TextField ariaLabel={label} value={draft} type={type} disabled={disabled} onChange={next => { if (!dirty) saveDraft.current = onSave; setDraft(next); setDirty(next !== value) }} onCommit={() => { void commit() }} /><Button size="small" disabled={disabled || !dirty} onClick={() => void commit()}>{uiText('auto.efc007a393f6')}</Button></div>
 }
 
 export function useChoices() {
@@ -73,9 +99,9 @@ export function profileOptions(profiles: AiPersonality[], value: string) {
 }
 
 export function ChatPreferences() {
-  const read = React.useCallback(() => api.backend.call<MarkdownSettings>('configuration.settings'), [])
-  const state = useSettingsResource(read), choices = useChoices(), settings = state.value
-  const save = (key: string, value: unknown) => state.save(async () => { const result = await api.settings.set(key, value); if (result && !result.ok) throw new Error(words('unavailable')) })
+  const read = React.useCallback(() => api.backend.call<SettingsDocument>('configuration.settings'), [])
+  const state = useSettingsResource(read), choices = useChoices(), settings = state.value?.values
+  const save = (key: string, value: unknown) => state.save(() => api.backend.call('configuration.set', { key, value, expectedRevision: state.value?.revision }))
   const select = (key: keyof MarkdownSettings, options: { value: string; label: string }[]) => <Row title={words(key)}><Select ariaLabel={words(key)} value={String(settings?.[key] ?? '')} options={options} disabled={state.pending} onChange={value => { void save(key, value) }} /></Row>
   const toggle = (key: keyof MarkdownSettings) => <Row key={key} title={words(key)}><Toggle label={words(key)} checked={settings?.[key] === true} disabled={state.pending} onChange={value => { void save(key, value) }} /></Row>
   return <><Status loading={!settings && !state.error} pending={state.pending} error={state.error || choices.error} />{settings && <>
@@ -86,7 +112,7 @@ export function ChatPreferences() {
     </Section>
     <Section title={words('appearance')}>
       <Row title={words('sendOnEnter')}><Select ariaLabel={words('sendOnEnter')} value={settings.sendOnEnter ? 'enter' : 'mod'} options={[{ value: 'enter', label: 'Enter' }, { value: 'mod', label: '⌘ / Ctrl + Enter' }]} disabled={state.pending} onChange={value => { void save('sendOnEnter', value === 'enter') }} /></Row>
-      {toggle('showTimestamps')}{toggle('showTelegram')}{toggle('showWhatsApp')}
+      {toggle('showTimestamps')}
       {select('commandReporting', ['context', 'descriptive', 'concise'].map(value => ({ value, label: words(value) })))}
     </Section>
     <Section title={words('attachments')}>
@@ -98,18 +124,30 @@ export function ChatPreferences() {
   </>}</>
 }
 
+export function ChannelVisibility() {
+  const read = React.useCallback(() => api.backend.call<SettingsDocument>('configuration.settings'), [])
+  const state = useSettingsResource(read)
+  return <><Status loading={!state.value && !state.error} pending={state.pending} error={state.error} />{state.value && (['showTelegram', 'showWhatsApp'] as const).map(key => <Row key={key} title={key === 'showTelegram' ? 'Telegram' : 'WhatsApp'} description={words('channelVisibilityHelp')}><Toggle label={words(key)} checked={state.value!.values[key]} disabled={state.pending} onChange={value => { void state.save(() => api.backend.call('configuration.set', { key, value, expectedRevision: state.value?.revision })) }} /></Row>)}</>
+}
+
+export function AttachmentFolder({ compact }: { compact?: boolean }) {
+  const read = React.useCallback(() => api.backend.call<SettingsDocument>('configuration.settings'), [])
+  const state = useSettingsResource(read)
+  return <div className={compact ? 'assistant-attachment-defaults' : undefined}><Status loading={!state.value && !state.error} pending={state.pending} error={state.error} />{state.value && <><p className="settings-description">{words('sharedAttachmentFolder')}</p><SavedText label={words('attachmentFolder')} value={state.value.values.attachmentFolder} disabled={state.pending} onSave={value => state.save(() => api.backend.call('configuration.set', { key: 'attachmentFolder', value: value.trim(), expectedRevision: state.value?.revision }))} /><p className="assistant-instruction-path">{state.value.values.attachmentFolder || '.valley/plugins/data/assistant/attachment'}</p></>}</div>
+}
+
 export const Storage = ({ path = '.valley/plugins/data/assistant' }: { path?: string }) => <Row title={words('storage')} description={path}><Button variant="ghost" onClick={() => api.files.revealInFinder(path)}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FolderOpen />{words('openFolder')}</span></Button></Row>
 
 export function SpeechPreferences() {
-  const read = React.useCallback(() => api.backend.call<SpeechSettings>('configuration.speech'), [])
-  const state = useSettingsResource(read), value = state.value
+  const read = React.useCallback(() => api.backend.call<{ revision: number; values: SpeechSettings }>('configuration.speech'), [])
+  const state = useSettingsResource(read), value = state.value?.values
   const [voices, setVoices] = React.useState<SpeechVoice[]>([]), [voiceError, setVoiceError] = React.useState(''), [loadingVoices, setLoadingVoices] = React.useState(false)
-  const save = (patch: Partial<SpeechSettings>) => state.save(() => api.backend.call('configuration.speech.set', patch))
+  const save = (patch: Partial<SpeechSettings>) => state.save(() => api.backend.call('configuration.speech.set', { patch, expectedRevision: state.value?.revision }))
   React.useEffect(() => { setVoices([]); setVoiceError('') }, [value?.provider, value?.connectionId])
   const loadVoices = async () => {
     if (!value || loadingVoices) return
     setLoadingVoices(true); setVoiceError('')
-    try { setVoices(await api.ai.speech.voices({ provider: value.provider, connectionId: value.connectionId })) } catch (error) { setVoiceError(String(error)) } finally { setLoadingVoices(false) }
+    try { setVoices(await api.ai.speech.voices({ provider: value.provider, connectionId: value.connectionId || undefined })) } catch (error) { setVoiceError(String(error)) } finally { setLoadingVoices(false) }
   }
   const providers = [{ value: 'elevenlabs', label: 'ElevenLabs' }, { value: 'openai', label: 'OpenAI' }]
   return <Section title={words('speech')}><Status loading={!value && !state.error} pending={state.pending} error={state.error || voiceError} />{value && <>
@@ -128,15 +166,15 @@ export function Personalities() {
   const read = React.useCallback(async () => { const result = await api.assistant.listPersonalities(); if (!result.ok) throw new Error(result.error); return result.data?.personalities ?? [] }, [])
   const state = useSettingsResource(read), [name, setName] = React.useState(''), [removing, setRemoving] = React.useState<string>()
   const checked = async (work: Promise<{ ok: boolean; error?: string }>) => { const result = await work; if (!result.ok) throw new Error(result.error) }
-  const rename = (profile: AiPersonality, name: string) => state.save(async () => { const current = await api.assistant.readPersonality(profile.id); if (!current.ok || !current.data?.personality) throw new Error(current.error || words('unavailable')); await checked(api.assistant.savePersonality({ ...current.data.personality, name: name.trim() })) })
+  const rename = (profile: AiPersonality, name: string) => state.save(() => checked(api.assistant.savePersonality({ ...profile, name: name.trim() })))
   return <Section title={words('personalities')}><Status loading={!state.value && !state.error} pending={state.pending} error={state.error} />{state.value?.map(profile => <Row key={profile.id} title={profile.name}>
     <div className="assistant-preference-stack"><SavedText label={`${words('name')}: ${profile.name}`} value={profile.name} disabled={state.pending} onSave={name => name.trim() ? rename(profile, name) : Promise.resolve(false)} />
       <div className="settings-row-control assistant-preference-control"><Button variant="ghost" disabled={!profile.instructionsPath} onClick={() => { if (profile.instructionsPath) api.workspace.openFile(profile.instructionsPath) }}>{words('openNote')}</Button>
-      {profile.id !== 'default' && (removing === profile.id ? <><Button variant="danger" disabled={state.pending} onClick={() => { void state.save(() => checked(api.assistant.deletePersonality(profile.id))).then(ok => { if (ok) setRemoving(undefined) }) }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Trash />{words('delete')}</span></Button><Button variant="ghost" onClick={() => setRemoving(undefined)}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><X />{words('cancel')}</span></Button></> : <Button variant="ghost" onClick={() => setRemoving(profile.id)}><Trash /></Button>)}</div>
+      {profile.id !== 'default' && (removing === profile.id ? <><Button variant="danger" disabled={state.pending} onClick={() => { void state.save(() => checked(api.assistant.deletePersonality(profile.id, profile.configurationRevision))).then(ok => { if (ok) setRemoving(undefined) }) }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Trash />{words('delete')}</span></Button><Button variant="ghost" onClick={() => setRemoving(undefined)}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><X />{words('cancel')}</span></Button></> : <Button variant="ghost" onClick={() => setRemoving(profile.id)}><Trash /></Button>)}</div>
     </div></Row>)}
     <Row title={words('newPersonality')}><div className="settings-row-control assistant-preference-control"><api.ui.settings.TextField ariaLabel={words('newPersonality')} value={name} onChange={setName} /><Button disabled={state.pending || !name.trim()} onClick={() => { void state.save(async () => {
       const config = await api.assistant.getConfig(); if (!config.ok || !config.data) throw new Error(config.error)
-      await checked(api.assistant.savePersonality({ id: `profile-${crypto.randomUUID()}`, name: name.trim(), isDefault: false, instructions: '', routing: config.data.routing }))
+      await checked(api.assistant.savePersonality({ id: `profile-${crypto.randomUUID()}`, configurationRevision: 0, name: name.trim(), isDefault: false, instructions: '', routing: config.data.routing }))
       setName('')
     }) }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Plus />{words('add')}</span></Button></div></Row>
   </Section>

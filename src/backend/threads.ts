@@ -1,3 +1,5 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
 import { stopChatProcesses } from './processScopes'
 import { assertChatWritable, referenceAttachments, deleteChatData, markChatDeleting, datasetRows } from './attachments'
 import { cancelChatRuns } from './engine'
@@ -23,6 +25,7 @@ interface ChatMeta {
   titleOrigin?: 'manual' | 'generated' | 'fallback'
   titleRevision?: number
   configurationHash?: string
+  configurationRevision?: number
   instructionsPath?: string
   mode?: AiChatThread['mode']
   plan?: AiChatThread['plan']
@@ -58,9 +61,9 @@ const settingsFile = (dir: string): string => path.join(dir, SETTINGS_FILE)
 const threadFile = (dir: string): string => path.join(dir, THREAD_FILE)
 const guardOverridesFile = (dir: string): string => path.join(dir, GUARD_OVERRIDES_FILE)
 
-async function pathExists(file: string): Promise<boolean> {
+async function pathExists(file: string, api: OwnerApi = backendApi()): Promise<boolean> {
   try {
-    await fs.access(file)
+    await fs.access(file, api)
     return true
   } catch {
     return false
@@ -85,6 +88,7 @@ function metaOf(thread: AiChatThread): ChatMeta {
     titleOrigin: thread.titleOrigin,
     titleRevision: thread.titleRevision,
     configurationHash: thread.configurationHash,
+    configurationRevision: thread.configurationRevision,
     instructionsPath: thread.instructionsPath,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
@@ -116,6 +120,7 @@ function threadFromMeta(meta: ChatMeta, messages: AiMessage[]): AiChatThread {
     titleOrigin: meta.titleOrigin,
     titleRevision: meta.titleRevision,
     configurationHash: meta.configurationHash,
+    configurationRevision: meta.configurationRevision,
     instructionsPath: meta.instructionsPath,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
@@ -138,14 +143,14 @@ function threadFromMeta(meta: ChatMeta, messages: AiMessage[]): AiChatThread {
 }
 
 /** Tolerant parse of one folder's `settings.json` → meta (null if absent/invalid). */
-async function readMeta(dir: string): Promise<ChatMeta | null> {
-  const meta = await readJson<ChatMeta | null>(settingsFile(dir), null)
+async function readMeta(dir: string, api: OwnerApi = backendApi()): Promise<ChatMeta | null> {
+  const meta = await readJson<ChatMeta | null>(settingsFile(dir), null, api)
   return meta && typeof meta.id === 'string' ? meta : null
 }
 
 /** Tolerant parse of `thread.jsonl` → messages (skips malformed lines). */
-async function readThreadMessages(dir: string): Promise<AiMessage[]> {
-  const text = await readText(threadFile(dir))
+async function readThreadMessages(dir: string, api: OwnerApi = backendApi()): Promise<AiMessage[]> {
+  const text = await readText(threadFile(dir), api)
   if (!text) return []
   const messages: AiMessage[] = []
   for (const line of text.split(/\r?\n/)) {
@@ -165,13 +170,13 @@ async function readThreadMessages(dir: string): Promise<AiMessage[]> {
  * parseable, so we scan `Channels/<*>/<*>/` for a matching `settings.json`.
  * Returns null when the chat does not exist.
  */
-export async function resolveChatDir(vaultRoot: string, id: string): Promise<string | null> {
+export async function resolveChatDir(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<string | null> {
   if (!isSafeName(id)) return null
   const appDir = path.join(chorusChatsDir(vaultRoot), safeSegment(id))
-  if (await pathExists(settingsFile(appDir))) return appDir
+  if (await pathExists(settingsFile(appDir), api)) return appDir
   let channels: import('./filesystem').DirectoryEntry[]
   try {
-    channels = await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true })
+    channels = await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true }, api)
   } catch {
     return null
   }
@@ -179,27 +184,27 @@ export async function resolveChatDir(vaultRoot: string, id: string): Promise<str
     if (!ch.isDirectory()) continue
     let refs: import('./filesystem').DirectoryEntry[]
     try {
-      refs = await fs.readdir(path.join(chorusChannelsDir(vaultRoot), ch.name), { withFileTypes: true })
+      refs = await fs.readdir(path.join(chorusChannelsDir(vaultRoot), ch.name), { withFileTypes: true }, api)
     } catch {
       continue
     }
     for (const ref of refs) {
       if (!ref.isDirectory()) continue
       const dir = path.join(chorusChannelsDir(vaultRoot), ch.name, ref.name)
-      if ((await readMeta(dir))?.id === id) return dir
+      if ((await readMeta(dir, api))?.id === id) return dir
     }
   }
   return null
 }
 
-export async function listChats(vaultRoot: string, includeEmpty = false): Promise<AiChatSummary[]> {
+export async function listChats(vaultRoot: string, includeEmpty = false, api: OwnerApi = backendApi()): Promise<AiChatSummary[]> {
   const byId = new Map<string, AiChatSummary>()
   const add = async (meta: ChatMeta, dir: string): Promise<void> => {
-    if (!includeEmpty && !(meta.messageCount ?? (await readThreadMessages(dir)).length) && !meta.pendingMessages?.length) return
+    if (!includeEmpty && !(meta.messageCount ?? (await readThreadMessages(dir, api)).length) && !meta.pendingMessages?.length) return
     // Emit `model`/`profileId` only when set — an explicit `null`/`undefined`
     // would change object identity for equality-based consumers.
     const summary: AiChatSummary = { id: meta.id, title: meta.title, updatedAt: meta.updatedAt }
-    const preview = meta.preview ?? messagePreview(await readThreadMessages(dir))
+    const preview = meta.preview ?? messagePreview(await readThreadMessages(dir, api))
     if (preview) summary.preview = preview
     if (meta.projectId) summary.projectId = meta.projectId
     if (meta.harness) summary.harness = meta.harness
@@ -215,9 +220,9 @@ export async function listChats(vaultRoot: string, includeEmpty = false): Promis
   }
   // App chats: one folder each under Chats/.
   try {
-    for (const d of await fs.readdir(chorusChatsDir(vaultRoot), { withFileTypes: true })) {
+    for (const d of await fs.readdir(chorusChatsDir(vaultRoot), { withFileTypes: true }, api)) {
       if (!d.isDirectory()) continue
-      const meta = await readMeta(path.join(chorusChatsDir(vaultRoot), d.name))
+      const meta = await readMeta(path.join(chorusChatsDir(vaultRoot), d.name), api)
       if (meta) await add(meta, path.join(chorusChatsDir(vaultRoot), d.name))
     }
   } catch {
@@ -225,12 +230,12 @@ export async function listChats(vaultRoot: string, includeEmpty = false): Promis
   }
   // Remote-channel chats: Channels/<channelId>/<chatRef>/.
   try {
-    for (const ch of await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true })) {
+    for (const ch of await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true }, api)) {
       if (!ch.isDirectory()) continue
       const channelDir = path.join(chorusChannelsDir(vaultRoot), ch.name)
-      for (const ref of await fs.readdir(channelDir, { withFileTypes: true })) {
+      for (const ref of await fs.readdir(channelDir, { withFileTypes: true }, api)) {
         if (!ref.isDirectory()) continue
-        const meta = await readMeta(path.join(channelDir, ref.name))
+        const meta = await readMeta(path.join(channelDir, ref.name), api)
         if (meta) await add(meta, path.join(channelDir, ref.name))
       }
     }
@@ -240,147 +245,147 @@ export async function listChats(vaultRoot: string, includeEmpty = false): Promis
   return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-export async function readChat(vaultRoot: string, id: string): Promise<AiChatThread | null> {
+export async function readChat(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<AiChatThread | null> {
   if (!isSafeName(id)) return null
-  const dir = await resolveChatDir(vaultRoot, id)
+  const dir = await resolveChatDir(vaultRoot, id, api)
   if (dir) {
-    const meta = await readMeta(dir)
+    const meta = await readMeta(dir, api)
     if (meta) {
-      const configuration = await conversationConfiguration(vaultRoot, dir, meta)
-      return threadFromMeta({ ...meta, ...configuration.settings, configurationHash: configuration.hash, instructionsPath: configuration.instructionsPath }, await readThreadMessages(dir))
+      const configuration = await conversationConfiguration(vaultRoot, dir, meta, undefined, undefined, api)
+      return threadFromMeta({ ...meta, ...configuration.settings, configurationHash: configuration.hash, configurationRevision: configuration.revision, instructionsPath: configuration.instructionsPath }, await readThreadMessages(dir, api))
     }
   }
   return null
 }
 
-async function indexChat(thread: AiChatThread): Promise<void> {
-  if (!thread.messages.length && !thread.pendingMessages?.length) { await backendApi().data.dataset('chat_search').delete({ id: thread.id }); return }
+async function indexChat(thread: AiChatThread, api: OwnerApi = backendApi()): Promise<void> {
+  if (!thread.messages.length && !thread.pendingMessages?.length) { await api.data.dataset('chat_search').delete({ id: thread.id }); return }
   const messages = thread.messages.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
-  await backendApi().data.dataset('chat_search').upsert({ id: thread.id, title: thread.title, content: messages.map(message => message.content).join('\n'), preview: messagePreview(messages), updatedAt: thread.updatedAt })
+  await api.data.dataset('chat_search').upsert({ id: thread.id, title: thread.title, content: messages.map(message => message.content).join('\n'), preview: messagePreview(messages), updatedAt: thread.updatedAt })
 }
 
-async function updateChatSearch(operation: () => Promise<void>): Promise<void> {
-  try { await operation() } catch (error) { backendApi().rpc.emit('backendError', String(error)) }
+async function updateChatSearch(operation: () => Promise<void>, api: OwnerApi = backendApi()): Promise<void> {
+  try { await operation() } catch (error) { api.rpc.emit('backendError', String(error)) }
 }
 
-export async function rebuildChatSearch(vaultRoot: string): Promise<void> {
-  const dataset = backendApi().data.dataset('chat_search')
+export async function rebuildChatSearch(vaultRoot: string, api: OwnerApi = backendApi()): Promise<void> {
+  const dataset = api.data.dataset('chat_search')
   const existing = new Map((await datasetRows(dataset)).map(row => [row.id, row]))
-  for (const summary of await listChats(vaultRoot)) {
+  for (const summary of await listChats(vaultRoot, false, api)) {
     const cached = existing.get(summary.id)
     if (!cached || cached.updatedAt !== summary.updatedAt || cached.title !== summary.title) {
-      const thread = await readChat(vaultRoot, summary.id)
-      if (thread) await indexChat(thread)
+      const thread = await readChat(vaultRoot, summary.id, api)
+      if (thread) await indexChat(thread, api)
     }
     existing.delete(summary.id)
   }
   for (const id of existing.keys()) if (typeof id === 'string') await dataset.delete({ id })
 }
 
-export async function saveChat(vaultRoot: string, thread: AiChatThread): Promise<void> {
+export async function saveChat(vaultRoot: string, thread: AiChatThread, api: OwnerApi = backendApi()): Promise<void> {
   if (!isSafeName(thread.id)) throw new Error(t('assistant.backend.invalidChat', { value: thread.id }))
   return runExclusive(`chat:${thread.id}`, async () => {
-  await assertChatWritable(thread.id)
+  await assertChatWritable(thread.id, api)
   if (thread.projectId) {
-    const project = await backendApi().data.dataset('projects').get({ id: thread.projectId })
+    const project = await api.data.dataset('projects').get({ id: thread.projectId })
     if (!project || project.deleting) delete thread.projectId
   }
-  await referenceAttachments(thread.id, [...thread.messages, ...(thread.pendingMessages ?? []).map(item => ({ role: 'user' as const, content: item.text, attachmentIds: item.attachments?.flatMap(attachment => attachment.id ? [attachment.id] : []) }))])
+  await referenceAttachments(thread.id, [...thread.messages, ...(thread.pendingMessages ?? []).map(item => ({ role: 'user' as const, content: item.text, attachmentIds: item.attachments?.flatMap(attachment => attachment.id ? [attachment.id] : []) }))], api)
   const dir = chatDir(vaultRoot, thread)
-  await fs.mkdir(dir, { recursive: true })
-  const prior = await readMeta(dir)
-  const configuration = await conversationConfiguration(vaultRoot, dir, prior ?? thread, thread, thread.configurationHash)
-  Object.assign(thread, configuration.settings, { configurationHash: configuration.hash, instructionsPath: configuration.instructionsPath })
+  await fs.mkdir(dir, { recursive: true }, api)
+  const prior = await readMeta(dir, api)
+  const configuration = await conversationConfiguration(vaultRoot, dir, prior ?? thread, thread, thread.configurationRevision, api)
+  Object.assign(thread, configuration.settings, { configurationHash: configuration.hash, configurationRevision: configuration.revision, instructionsPath: configuration.instructionsPath })
   if (prior && (prior.titleOrigin === 'manual' || prior.titleOrigin === 'generated' && (thread.titleRevision ?? 0) <= (prior.titleRevision ?? 0))) { thread.title = prior.title; thread.titleOrigin = prior.titleOrigin; thread.titleRevision = prior.titleRevision; thread.channelIdentity = prior.channelIdentity ?? thread.channelIdentity }
   else if (prior && thread.title !== prior.title && thread.titleOrigin !== 'generated' && thread.titleOrigin !== 'fallback') { thread.titleOrigin = 'manual'; thread.titleRevision = (prior.titleRevision ?? 0) + 1 }
-  await queuedWriteJson(settingsFile(dir), metaOf(thread))
+  await queuedWriteJson(settingsFile(dir), metaOf(thread), api)
   const file = threadFile(dir)
   await runExclusive(file, async () => {
-    const existing = await readThreadMessages(dir)
+    const existing = await readThreadMessages(dir, api)
     const unchangedPrefix = thread.messages.length >= existing.length
       && existing.every((message, index) => JSON.stringify(message) === JSON.stringify(thread.messages[index]))
     if (unchangedPrefix) {
       const delta = thread.messages.slice(existing.length)
-      if (delta.length) await fs.appendFile(file, delta.map((m) => JSON.stringify(m)).join('\n') + '\n', 'utf8')
+      if (delta.length) await fs.appendFile(file, delta.map((m) => JSON.stringify(m)).join('\n') + '\n', 'utf8', api)
     } else {
-      await atomicWriteFile(file, thread.messages.map((m) => JSON.stringify(m)).join('\n') + (thread.messages.length ? '\n' : ''))
+      await atomicWriteFile(file, thread.messages.map((m) => JSON.stringify(m)).join('\n') + (thread.messages.length ? '\n' : ''), api)
     }
-  })
-  await updateChatSearch(() => indexChat(thread))
-  })
+  }, api)
+  await updateChatSearch(() => indexChat(thread, api), api)
+  }, api)
 }
 
-export async function renameChat(vaultRoot: string, id: string, title: string): Promise<void> {
+export async function renameChat(vaultRoot: string, id: string, title: string, api: OwnerApi = backendApi()): Promise<void> {
   if (!isSafeName(id)) return
   return runExclusive(`chat:${id}`, async () => {
-  await assertChatWritable(id)
-  const dir = await resolveChatDir(vaultRoot, id)
+  await assertChatWritable(id, api)
+  const dir = await resolveChatDir(vaultRoot, id, api)
   if (!dir) return
-  const meta = await readMeta(dir)
+  const meta = await readMeta(dir, api)
   if (!meta) return
-  await queuedWriteJson(settingsFile(dir), { ...meta, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}), title, titleOrigin: 'manual', titleRevision: (meta.titleRevision ?? 0) + 1 })
-  await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id); if (thread) await indexChat(thread) })
-  })
+  await queuedWriteJson(settingsFile(dir), { ...meta, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}), title, titleOrigin: 'manual', titleRevision: (meta.titleRevision ?? 0) + 1 }, api)
+  await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id, api); if (thread) await indexChat(thread, api) }, api)
+  }, api)
 }
 
-export async function applyGeneratedTitle(vaultRoot: string, id: string, title: string, expected: { title: string; revision: number }): Promise<boolean> {
+export async function applyGeneratedTitle(vaultRoot: string, id: string, title: string, expected: { title: string; revision: number }, api: OwnerApi = backendApi()): Promise<boolean> {
   if (!isSafeName(id) || !title.trim()) return false
   return runExclusive(`chat:${id}`, async () => {
-    await assertChatWritable(id)
-    const dir = await resolveChatDir(vaultRoot, id)
+    await assertChatWritable(id, api)
+    const dir = await resolveChatDir(vaultRoot, id, api)
     if (!dir) return false
-    const meta = await readMeta(dir)
+    const meta = await readMeta(dir, api)
     if (!meta || meta.titleOrigin !== 'fallback' || meta.title !== expected.title || (meta.titleRevision ?? 0) !== expected.revision) return false
-    await queuedWriteJson(settingsFile(dir), { ...meta, title, titleOrigin: 'generated', titleRevision: expected.revision + 1, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}) })
-    await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id); if (thread) await indexChat(thread) })
-    backendApi().rpc.emit('conversations.changed', { id })
+    await queuedWriteJson(settingsFile(dir), { ...meta, title, titleOrigin: 'generated', titleRevision: expected.revision + 1, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}) }, api)
+    await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id, api); if (thread) await indexChat(thread, api) }, api)
+    api.rpc.emit('conversations.changed', { id })
     return true
-  })
+  }, api)
 }
 
-export async function setChatPinned(vaultRoot: string, id: string, pinned: boolean): Promise<void> {
+export async function setChatPinned(vaultRoot: string, id: string, pinned: boolean, api: OwnerApi = backendApi()): Promise<void> {
   if (!isSafeName(id)) return
   return runExclusive(`chat:${id}`, async () => {
-  await assertChatWritable(id)
-  const dir = await resolveChatDir(vaultRoot, id)
+  await assertChatWritable(id, api)
+  const dir = await resolveChatDir(vaultRoot, id, api)
   if (!dir) return
-  const meta = await readMeta(dir)
+  const meta = await readMeta(dir, api)
   if (!meta) return
-  await queuedWriteJson(settingsFile(dir), { ...meta, pinned: pinned || undefined })
-  })
+  await queuedWriteJson(settingsFile(dir), { ...meta, pinned: pinned || undefined }, api)
+  }, api)
 }
 
-export async function deleteChat(vaultRoot: string, id: string): Promise<void> {
+export async function deleteChat(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<void> {
   if (!isSafeName(id)) return
-  await runExclusive(`chat:${id}`, async () => { await markChatDeleting(id, await resolveChatDir(vaultRoot, id) ?? '') })
-  await cancelChatRuns(id)
-  await stopChatProcesses(id, true)
+  await runExclusive(`chat:${id}`, async () => { await markChatDeleting(id, await resolveChatDir(vaultRoot, id, api) ?? '', api) }, api)
+  await cancelChatRuns(id, api)
+  await stopChatProcesses(id, true, api)
   await runExclusive(`chat:${id}`, async () => {
-    const dir = await resolveChatDir(vaultRoot, id)
-    await deleteChatData(id, dir ?? '')
-    await updateChatSearch(async () => { await backendApi().data.dataset('chat_search').delete({ id }) })
-  })
+    const dir = await resolveChatDir(vaultRoot, id, api)
+    await deleteChatData(id, dir ?? '', api)
+    await updateChatSearch(async () => { await api.data.dataset('chat_search').delete({ id }) }, api)
+  }, api)
 }
 
 /**
  * Wipe a chat's active context (the `/clear` command) WITHOUT deleting its
  * long-term `memory.jsonl` — the thread is reset but extracted facts persist.
  */
-export async function clearChat(vaultRoot: string, id: string): Promise<void> {
+export async function clearChat(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<void> {
   if (!isSafeName(id)) return
   return runExclusive(`chat:${id}`, async () => {
-  await assertChatWritable(id)
-  const dir = await resolveChatDir(vaultRoot, id)
+  await assertChatWritable(id, api)
+  const dir = await resolveChatDir(vaultRoot, id, api)
   if (dir) {
-    await fs.rm(threadFile(dir), { force: true })
-    const meta = await readMeta(dir)
+    await fs.rm(threadFile(dir), { force: true }, api)
+    const meta = await readMeta(dir, api)
     if (meta) {
       const cleared = { ...meta, preview: '', messageCount: 0, updatedAt: Date.now() }
-      await queuedWriteJson(settingsFile(dir), cleared)
-      await updateChatSearch(() => indexChat(threadFromMeta(cleared, [])))
+      await queuedWriteJson(settingsFile(dir), cleared, api)
+      await updateChatSearch(() => indexChat(threadFromMeta(cleared, []), api), api)
     }
   }
-  })
+  }, api)
 }
 
 // ── Per-chat guard overrides (guard-overrides.json, narrow-only) ──────────────
@@ -391,24 +396,24 @@ export async function clearChat(vaultRoot: string, id: string): Promise<void> {
 // the raw choice is safe.
 
 /** Read a chat's persisted guard overrides (null when absent). */
-export async function readGuardOverrides(vaultRoot: string, id: string): Promise<GuardOverrides | null> {
+export async function readGuardOverrides(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<GuardOverrides | null> {
   if (!isSafeName(id)) return null
-  const dir = await resolveChatDir(vaultRoot, id)
+  const dir = await resolveChatDir(vaultRoot, id, api)
   if (!dir) return null
-  return readJson<GuardOverrides | null>(guardOverridesFile(dir), null)
+  return readJson<GuardOverrides | null>(guardOverridesFile(dir), null, api)
 }
 
 /**
  * Persist a chat's guard overrides (atomic, queued, C16). The chat folder is taken
  * from `thread` when given (so a brand-new remote-channel chat resolves), else by id.
  */
-export async function saveGuardOverrides(vaultRoot: string, ref: { id: string } | AiChatThread, overrides: GuardOverrides): Promise<void> {
+export async function saveGuardOverrides(vaultRoot: string, ref: { id: string } | AiChatThread, overrides: GuardOverrides, api: OwnerApi = backendApi()): Promise<void> {
   if (!isSafeName(ref.id)) throw new Error(t('assistant.backend.invalidChat', { value: ref.id }))
   return runExclusive(`chat:${ref.id}`, async () => {
-  await assertChatWritable(ref.id)
+  await assertChatWritable(ref.id, api)
   const dir =
-    'messages' in ref ? chatDir(vaultRoot, ref) : (await resolveChatDir(vaultRoot, ref.id)) ?? path.join(chorusChatsDir(vaultRoot), safeSegment(ref.id))
-  await fs.mkdir(dir, { recursive: true })
-  await queuedWriteJson(guardOverridesFile(dir), overrides)
-  })
+    'messages' in ref ? chatDir(vaultRoot, ref) : (await resolveChatDir(vaultRoot, ref.id, api)) ?? path.join(chorusChatsDir(vaultRoot), safeSegment(ref.id))
+  await fs.mkdir(dir, { recursive: true }, api)
+  await queuedWriteJson(guardOverridesFile(dir), overrides, api)
+  }, api)
 }

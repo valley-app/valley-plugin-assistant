@@ -1,3 +1,5 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
 import type { ChannelMediaMetadata, MessageDestination, ChannelMediaKind } from '../../contracts/channel'
 import { openOwnedAttachment } from '../attachments'
 import { backendApi } from '../runtime'
@@ -28,14 +30,14 @@ export function probeWebP(bytes: Uint8Array, size: number): ChannelMediaMetadata
   throw new DeliveryRejected('WebP dimensions could not be verified within the bounded header probe')
 }
 
-export async function probeLocalSticker(relativePath: string, mime: string): Promise<ChannelMediaMetadata> {
+export async function probeLocalSticker(relativePath: string, mime: string, api: OwnerApi = backendApi()): Promise<ChannelMediaMetadata> {
   if (mime !== 'image/webp') throw new DeliveryRejected('A trusted local decoder is unavailable for this sticker format. Preserve the original or reuse its verified provider reference; no conversion was performed.')
-  const file = await openOwnedAttachment(relativePath)
+  const file = await openOwnedAttachment(relativePath, api)
   if (!file) throw new DeliveryRejected('Import the sticker into this conversation before sending it')
   try {
-    const part = await backendApi().files.read(file.handle, { offset: 0, maxBytes: 65536 })
+    const part = await api.files.read(file.handle, { offset: 0, maxBytes: 65536 })
     return probeWebP(Uint8Array.from(atob(part.base64), character => character.charCodeAt(0)), file.size)
-  } finally { await backendApi().files.release([file.handle]) }
+  } finally { await api.files.release([file.handle]) }
 }
 
 export async function trustedProviderReference(repository: AssistantRepository, destination: MessageDestination, attachmentId: string, media: ChannelMediaKind): Promise<ChannelDispatchAttachment['providerReference']> {

@@ -1,3 +1,6 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
+import { backendApi } from '../../../runtime'
 import type { MessageContent, MessageDestination } from '../../../../contracts/channel'
 import { whatsappFetch, uploadFile } from '../../network'
 import { DeliveryRejected } from '../../deliveryQueue'
@@ -7,7 +10,7 @@ import { channelCapabilities, resolveMedia, validateContent } from '../../capabi
 import { formatInline } from '../../formatting'
 import type { ChannelDispatchAttachment } from '../../mediaProbe'
 
-export async function dispatchWhatsApp(token: string, config: ChannelRuntimeConfig, destination: MessageDestination, content: MessageContent, attachment?: ChannelDispatchAttachment): Promise<string[]> {
+export async function dispatchWhatsApp(token: string, config: ChannelRuntimeConfig, destination: MessageDestination, content: MessageContent, attachment?: ChannelDispatchAttachment, api: OwnerApi = backendApi()): Promise<string[]> {
   validateContent(destination, content)
   if (!config.phoneNumberId) throw new DeliveryRejected('WhatsApp phone number is not configured')
   const endpoint = `https://graph.facebook.com/${normalizeGraphVersion(config.graphVersion)}/${config.phoneNumberId}`
@@ -34,21 +37,21 @@ export async function dispatchWhatsApp(token: string, config: ChannelRuntimeConf
     const reference = attachment.providerReference
     if (reference && reference.channelId === destination.channelId && reference.media === media) {
       let existing: Response
-      try { existing = await whatsappFetch(`https://graph.facebook.com/${normalizeGraphVersion(config.graphVersion)}/${encodeURIComponent(reference.id)}`, { headers: { authorization: `Bearer ${token}` } }) }
+      try { existing = await whatsappFetch(`https://graph.facebook.com/${normalizeGraphVersion(config.graphVersion)}/${encodeURIComponent(reference.id)}`, { headers: { authorization: `Bearer ${token}` } }, api) }
       catch { throw new DeliveryRejected('Could not verify the original WhatsApp media reference; no message was sent') }
       await existing.body?.cancel()
       if (existing.ok) mediaId = reference.id
       else if (![400, 404, 410].includes(existing.status)) throw new DeliveryRejected(`WhatsApp media verification failed (${existing.status}); no message was sent`)
     }
     if (!mediaId) {
-      const upload = await uploadFile(`${endpoint}/media`, { handle: token, placement: 'header', name: 'Authorization', prefix: 'Bearer ' }, attachment.path, { messaging_product: 'whatsapp', type: attachment.mime }, 'file', { fileName: attachment.fileName, mimeType: attachment.mime, maxBytes: rule.maxBytes })
+      const upload = await uploadFile(`${endpoint}/media`, { handle: token, placement: 'header', name: 'Authorization', prefix: 'Bearer ' }, attachment.path, { messaging_product: 'whatsapp', type: attachment.mime }, 'file', { fileName: attachment.fileName, mimeType: attachment.mime, maxBytes: rule.maxBytes }, api)
       if (!upload.ok) throw new DeliveryRejected(`WhatsApp media upload failed (${upload.status})`)
       mediaId = (await upload.json() as { id?: string }).id
     }
     if (!mediaId) throw new DeliveryRejected('WhatsApp returned no media identifier')
     body = { ...base, type, [type]: { id: mediaId, ...(content.caption ? { caption: content.caption } : {}), ...(type === 'document' ? { filename: attachment.fileName } : {}), ...(media === 'voice' ? { voice: true } : {}) } }
   } else throw new DeliveryRejected(`WhatsApp does not support ${content.type}`)
-  const response = await whatsappFetch(`${endpoint}/messages`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const response = await whatsappFetch(`${endpoint}/messages`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) }, api)
   const result = await response.json() as { messages?: Array<{ id: string }>; success?: boolean; error?: { message?: string } }
   if (!response.ok || result.error) throw new DeliveryRejected(result.error?.message ?? `WhatsApp rejected the request (${response.status})`)
   if ((content.type === 'read' || content.type === 'activity') && result.success === true) return []

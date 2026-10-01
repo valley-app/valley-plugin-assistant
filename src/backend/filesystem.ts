@@ -1,6 +1,6 @@
 import { t } from './runtime'
 import path from 'path-browserify'
-import type { PluginBackendApi } from '@valley/plugin-sdk'
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { PluginStorageGrant, PluginStorageLocation } from '@valley/plugin-sdk/pluginStorage'
 import { backendApi, VAULT_ROOT } from './runtime'
 
@@ -15,14 +15,15 @@ export function bindAttachmentFolder(folder: string): string {
   if (!roots.some(root => root.virtual === virtual)) roots.push({ area: 'vault', path: normalized, virtual })
   return virtual
 }
-const sessions = new WeakMap<PluginBackendApi, { grants: Map<string, Promise<PluginStorageGrant>>; queues: Map<string, Promise<unknown>> }>()
-function session(api: PluginBackendApi) {
+export type StorageApi = Pick<PluginBackendOperationContext['api'], 'storage'>
+const sessions = new WeakMap<StorageApi, { grants: Map<string, Promise<PluginStorageGrant>>; queues: Map<string, Promise<unknown>> }>()
+function session(api: StorageApi) {
   let value = sessions.get(api)
   if (!value) { value = { grants: new Map(), queues: new Map() }; sessions.set(api, value) }
   return value
 }
 const missing = (file: string): Error => Object.assign(new Error(t('assistant.backend.missingFile', { value: file })), { code: 'ENOENT' })
-export async function storageLocation(file: string, mode: 'read' | 'write' = 'write', api = backendApi()): Promise<PluginStorageLocation> {
+export async function storageLocation(file: string, mode: 'read' | 'write' = 'write', api: StorageApi = backendApi()): Promise<PluginStorageLocation> {
   const { grants } = session(api)
   const normalized = path.resolve(file)
   const scope = roots.find((root) => normalized === root.virtual || normalized.startsWith(root.virtual + '/'))
@@ -36,7 +37,15 @@ export async function storageLocation(file: string, mode: 'read' | 'write' = 'wr
   const grant = await pending
   return { handle: grant.handle, path: path.relative(scope.virtual, normalized) }
 }
-export async function releaseFileAccess(api = backendApi()): Promise<void> {
+
+export async function documentLocation(file: string, mode: 'read' | 'write', api: Pick<PluginBackendOperationContext['api'], 'storage'>): Promise<PluginStorageLocation> {
+  const normalized = path.resolve(file)
+  const scope = roots.find(root => normalized === root.virtual || normalized.startsWith(root.virtual + '/'))
+  if (!scope) throw new Error(t('assistant.backend.storageBinding', { value: file }))
+  const grant = await api.storage.open({ area: scope.area, path: scope.path, kind: 'directory', mode })
+  return { handle: grant.handle, path: path.relative(scope.virtual, normalized) }
+}
+export async function releaseFileAccess(api: StorageApi = backendApi()): Promise<void> {
   const { grants, queues } = session(api)
   while (queues.size) await Promise.allSettled([...queues.values()])
   const existing = [...grants.values()]
@@ -45,8 +54,7 @@ export async function releaseFileAccess(api = backendApi()): Promise<void> {
   const failure = results.find(result => result.status === 'rejected')
   if (failure?.status === 'rejected') throw failure.reason
 }
-export async function readFile(file: string, _encoding: 'utf8' = 'utf8'): Promise<string> {
-  const api = backendApi()
+export async function readFile(file: string, _encoding: 'utf8' = 'utf8', api: StorageApi = backendApi()): Promise<string> {
   const location = await storageLocation(file, 'read', api)
   if (!await api.storage.stat(location)) throw missing(file)
   const decoder = new TextDecoder()
@@ -68,7 +76,7 @@ function* textChunks(content: string): Generator<string> {
     offset = end
   }
 }
-export async function writeFile(file: string, content: string | Uint8Array, _encoding: 'utf8' = 'utf8', api = backendApi()): Promise<void> {
+export async function writeFile(file: string, content: string | Uint8Array, _encoding: 'utf8' = 'utf8', api: StorageApi = backendApi()): Promise<void> {
   const location = await storageLocation(file, 'write', api)
   if (typeof content !== 'string') {
     if (!content.length) { await api.storage.writeBytes(location, ''); return }
@@ -84,41 +92,37 @@ export async function writeFile(file: string, content: string | Uint8Array, _enc
   let append = false
   for (const chunk of textChunks(content)) { await api.storage.write(location, chunk, append); append = true }
 }
-export async function appendFile(file: string, content: string, _encoding: 'utf8' = 'utf8'): Promise<void> {
-  const api = backendApi()
+export async function appendFile(file: string, content: string, _encoding: 'utf8' = 'utf8', api: StorageApi = backendApi()): Promise<void> {
   const location = await storageLocation(file, 'write', api)
   for (const chunk of textChunks(content)) await api.storage.write(location, chunk, true)
 }
-export async function mkdir(file: string, _options?: { recursive?: boolean }, api = backendApi()): Promise<void> { await api.storage.mkdir(await storageLocation(file, 'write', api)) }
-export async function rename(from: string, to: string, api = backendApi()): Promise<void> { await api.storage.move(await storageLocation(from, 'write', api), await storageLocation(to, 'write', api)) }
-export async function rm(file: string, options?: { recursive?: boolean; force?: boolean }, api = backendApi()): Promise<void> { await api.storage.remove(await storageLocation(file, 'write', api), { recursive: options?.recursive, missingOk: options?.force }) }
-export async function unlink(file: string): Promise<void> { await rm(file) }
-export async function access(file: string): Promise<void> { const api = backendApi(); if (!await api.storage.stat(await storageLocation(file, 'read', api))) throw missing(file) }
-export async function stat(file: string) {
-  const api = backendApi()
+export async function mkdir(file: string, _options?: { recursive?: boolean }, api: StorageApi = backendApi()): Promise<void> { await api.storage.mkdir(await storageLocation(file, 'write', api)) }
+export async function rename(from: string, to: string, api: StorageApi = backendApi()): Promise<void> { await api.storage.move(await storageLocation(from, 'write', api), await storageLocation(to, 'write', api)) }
+export async function rm(file: string, options?: { recursive?: boolean; force?: boolean }, api: StorageApi = backendApi()): Promise<void> { await api.storage.remove(await storageLocation(file, 'write', api), { recursive: options?.recursive, missingOk: options?.force }) }
+export async function unlink(file: string, api: StorageApi = backendApi()): Promise<void> { await rm(file, undefined, api) }
+export async function access(file: string, api: StorageApi = backendApi()): Promise<void> { if (!await api.storage.stat(await storageLocation(file, 'read', api))) throw missing(file) }
+export async function stat(file: string, api: StorageApi = backendApi()) {
   const result = await api.storage.stat(await storageLocation(file, 'read', api))
   if (!result) throw missing(file)
   return { ...result, mtime: new Date(result.mtimeMs), isFile: () => result.kind === 'file', isDirectory: () => result.kind === 'directory', isSymbolicLink: () => result.kind === 'symlink' }
 }
 export const lstat = stat
 export interface DirectoryEntry { name: string; isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean }
-export function readdir(file: string): Promise<string[]>
-export function readdir(file: string, options: { withFileTypes: true }): Promise<DirectoryEntry[]>
-export async function readdir(file: string, options?: { withFileTypes: true }): Promise<string[] | DirectoryEntry[]> {
-  const api = backendApi()
+export function readdir(file: string, options?: undefined, api?: StorageApi): Promise<string[]>
+export function readdir(file: string, options: { withFileTypes: true }, api?: StorageApi): Promise<DirectoryEntry[]>
+export async function readdir(file: string, options?: { withFileTypes: true }, api: StorageApi = backendApi()): Promise<string[] | DirectoryEntry[]> {
   const entries = await api.storage.list(await storageLocation(file, 'read', api))
   return options?.withFileTypes ? entries.map((entry) => ({ name: entry.name, isFile: () => entry.kind === 'file', isDirectory: () => entry.kind === 'directory', isSymbolicLink: () => entry.kind === 'symlink' })) : entries.map((entry) => entry.name)
 }
-export function queueFileWrite<T>(file: string, run: () => Promise<T>): Promise<T> {
-  const api = backendApi()
-  const { queues } = session(api)
-  const pending = (queues.get(file) ?? Promise.resolve()).catch(() => undefined).then(() => { if (backendApi() !== api) throw new Error('Assistant backend changed before queued write'); return run() })
+export function queueFileWrite<T>(file: string, run: () => Promise<T>, _api: StorageApi = backendApi()): Promise<T> {
+  const backend = backendApi()
+  const { queues } = session(backend)
+  const pending = (queues.get(file) ?? Promise.resolve()).catch(() => undefined).then(() => { if (backendApi() !== backend) throw new Error('Assistant backend changed before queued write'); return run() })
   queues.set(file, pending)
   void pending.finally(() => { if (queues.get(file) === pending) queues.delete(file) }).catch(() => undefined)
   return pending
 }
-export async function atomicWriteFile(file: string, text: string | Uint8Array): Promise<void> {
-  const api = backendApi()
+export async function atomicWriteFile(file: string, text: string | Uint8Array, api: StorageApi = backendApi()): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true }, api)
   const temporary = `${file}.tmp-${crypto.randomUUID()}`
   try { await writeFile(temporary, text, 'utf8', api); await rename(temporary, file, api) }

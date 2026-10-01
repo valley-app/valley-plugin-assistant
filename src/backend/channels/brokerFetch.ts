@@ -1,3 +1,5 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
 import type { PluginFetchRequest } from '@valley/plugin-sdk/pluginNetwork'
 import { backendApi } from '../runtime'
 
@@ -17,8 +19,8 @@ function decode(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
 }
 
-export async function brokerFetch(url: string, input: BrokerRequest = {}): Promise<Response> {
-  const network = backendApi().network
+export async function brokerFetch(url: string, input: BrokerRequest = {}, api: OwnerApi = backendApi()): Promise<Response> {
+  const network = api.network
   const requestId = crypto.randomUUID()
   const signal = input.signal
   signal?.throwIfAborted()

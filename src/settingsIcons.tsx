@@ -34,3 +34,4 @@ export const LuWind = icon('LuWind')
 export const LuFlaskConical = icon('LuFlaskConical')
 
 export const LuSettings = icon('LuSettings')
+export const RiVoiceAiFill = icon('RiVoiceAiFill')

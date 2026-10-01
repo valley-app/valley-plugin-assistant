@@ -1,3 +1,6 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
+import { backendApi } from '../../../runtime'
 import type { MessageContent, MessageDestination } from '../../../../contracts/channel'
 import { telegramFetch, uploadFile } from '../../network'
 import { DeliveryRejected } from '../../deliveryQueue'
@@ -11,7 +14,7 @@ async function receipt(response: Response): Promise<string[]> {
   if (body.ok !== true) throw new Error('Telegram returned an unrecognized response; delivery outcome is unknown')
   return typeof body.result === 'object' && body.result?.message_id !== undefined ? [String(body.result.message_id)] : []
 }
-export async function dispatchTelegram(token: string, destination: MessageDestination, content: MessageContent, attachment?: ChannelDispatchAttachment): Promise<string[]> {
+export async function dispatchTelegram(token: string, destination: MessageDestination, content: MessageContent, attachment?: ChannelDispatchAttachment, api: OwnerApi = backendApi()): Promise<string[]> {
   validateContent(destination, content)
   const base = { chat_id: destination.chatRef, ...(destination.topicId ? { message_thread_id: Number(destination.topicId) } : {}), ...(destination.replyToMessageId ? { reply_parameters: { message_id: Number(destination.replyToMessageId) } } : {}) }
   let method: string, body: Record<string, unknown>
@@ -37,9 +40,9 @@ export async function dispatchTelegram(token: string, destination: MessageDestin
     const field = { image: 'photo', audio: 'audio', voice: 'voice', video: 'video', file: 'document', videoNote: 'video_note', animation: 'animation', sticker: 'sticker' }[media]
     const method = { image: 'sendPhoto', audio: 'sendAudio', voice: 'sendVoice', video: 'sendVideo', file: 'sendDocument', videoNote: 'sendVideoNote', animation: 'sendAnimation', sticker: 'sendSticker' }[media]
     const reference = attachment.providerReference
-    if (reference && reference.channelId === destination.channelId && reference.media === media) return receipt(await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...base, [field]: reference.id, ...(content.caption ? { caption: content.caption, parse_mode: 'HTML' } : {}) }) }))
+    if (reference && reference.channelId === destination.channelId && reference.media === media) return receipt(await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...base, [field]: reference.id, ...(content.caption ? { caption: content.caption, parse_mode: 'HTML' } : {}) }) }, api))
     const fields = Object.fromEntries(Object.entries({ ...base, ...(content.caption ? { caption: content.caption, parse_mode: 'HTML' } : {}), ...(content.metadata?.duration ? { duration: content.metadata.duration } : {}), ...(media === 'audio' ? { ...(content.title ? { title: content.title } : {}), ...(content.performer ? { performer: content.performer } : {}) } : {}) }).map(([key, value]) => [key, typeof value === 'object' ? JSON.stringify(value) : String(value)]))
-    return receipt(await uploadFile(`https://api.telegram.org/:token/${method}`, { handle: token, placement: 'path', name: 'token', prefix: 'bot' }, attachment.path, fields, field, { fileName: attachment.fileName, mimeType: attachment.mime, maxBytes: channelCapabilities.telegram.media![media]!.maxBytes }))
+    return receipt(await uploadFile(`https://api.telegram.org/:token/${method}`, { handle: token, placement: 'path', name: 'token', prefix: 'bot' }, attachment.path, fields, field, { fileName: attachment.fileName, mimeType: attachment.mime, maxBytes: channelCapabilities.telegram.media![media]!.maxBytes }, api))
   } else throw new DeliveryRejected(`Telegram does not support ${content.type}`)
-  return receipt(await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+  return receipt(await telegramFetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }, api))
 }

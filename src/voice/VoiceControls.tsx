@@ -2,11 +2,15 @@ import type { SpeechEvent, VoiceState, SpeechVoice } from '@valley/plugin-sdk/sp
 import type { SpeechSettings } from '../backend/configuration/schemas'
 import { React, api } from '../runtime'
 import { uiText } from '../localization'
+import { ErrorNotice } from '../Preferences'
 import { VoiceOrb } from './VoiceOrb'
 import type { OrbState } from './orbEngine'
 import css from './voice.css'
 
 export interface VoiceControlsProps {
+  hiddenLauncher?: boolean
+  requested?: boolean
+  onClose?(): void
   conversationId: string
   executionState?: 'idle' | 'queued' | 'running' | 'thinking' | 'working' | 'review' | 'failed' | 'cancelled' | 'completed'
   response?: { id: string; text: string }
@@ -16,18 +20,17 @@ export interface VoiceControlsProps {
 }
 const Button: typeof api.ui.settings.Button = props => React.createElement(api.ui.settings.Button, props)
 const words = (key: string) => uiText(`assistant.voice.${key}`)
-const notePath = '.valley/plugins/data/assistant/speech.md'
 export function spokenResponse(text: string): string {
   return text.replace(/```[\s\S]*?```/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_all, path: string, label?: string) => label ?? path).replace(/^#{1,6}\s+/gm, '').replace(/[*_`~]/g, '').trim()
 }
 
 export function VoiceControls(props: VoiceControlsProps) {
   const [open, setOpen] = React.useState(false), [state, setState] = React.useState<VoiceState>('stopped')
-  const [sessionId, setSessionId] = React.useState<string>(), [settings, setSettings] = React.useState<SpeechSettings>()
+  const [sessionId, setSessionId] = React.useState<string>(), [settings, setSettings] = React.useState<SpeechSettings & { configurationRevision: number }>()
   const [voices, setVoices] = React.useState<SpeechVoice[]>([]), [choosing, setChoosing] = React.useState(false)
   const [error, setError] = React.useState(''), [transcript, setTranscript] = React.useState(''), [holding, setHolding] = React.useState(false)
   const [levels, setLevels] = React.useState({ input: 0, output: 0 })
-  const session = React.useRef<string>(), epoch = React.useRef(0), pending = React.useRef(false), held = React.useRef(false)
+  const session = React.useRef<string>(), launchEpoch = React.useRef(0), epoch = React.useRef(0), pending = React.useRef(false), held = React.useRef(false)
   const callbacks = React.useRef(props), seen = React.useRef(new Set<string>()), interrupted = React.useRef(new Set<string>())
   const lastResponse = React.useRef<string>(), speechEpoch = React.useRef(0), controls = React.useRef(Promise.resolve())
   const processing = React.useRef<{ utteranceId: string; sessionId: string; epoch: number; submitted: boolean }>(), speaking = React.useRef<string>()
@@ -81,30 +84,31 @@ export function VoiceControls(props: VoiceControlsProps) {
 
   const load = async () => {
     if (!api.ai.speech) throw new Error(words('unavailable'))
-    const configuration = await api.backend.call<SpeechSettings>('configuration.speech')
-    const available = await api.ai.speech.voices({ provider: configuration.provider, connectionId: configuration.connectionId })
+    const document = await api.backend.call<{ revision: number; values: SpeechSettings }>('configuration.speech')
+    const configuration = { ...document.values, configurationRevision: document.revision }
+    const available = await api.ai.speech.voices({ provider: configuration.provider, connectionId: configuration.connectionId || undefined })
     return { configuration, available }
   }
   const start = async () => {
     if (pending.current || session.current) return
-    const myEpoch = epoch.current
+    const myEpoch = epoch.current, attempt = ++launchEpoch.current
     pending.current = true; setOpen(true); setState('connecting'); setError('')
     try {
       const { configuration, available } = await load()
-      if (myEpoch !== epoch.current) return
+      if (myEpoch !== epoch.current || attempt !== launchEpoch.current) return
       setSettings(configuration); setVoices(available)
       if (!configuration.voiceId || !available.some(voice => voice.id === configuration.voiceId)) { setChoosing(true); setState('stopped'); return }
       lastResponse.current = callbacks.current.response?.id
       const started = await api.ai.speech.start({
         conversationId: props.conversationId,
-        transcription: { provider: configuration.transcriptionProvider ?? configuration.provider, connectionId: configuration.transcriptionConnectionId ?? (!configuration.transcriptionProvider || configuration.transcriptionProvider === configuration.provider ? configuration.connectionId : undefined), model: configuration.realtimeModel },
-        synthesis: { provider: configuration.provider, connectionId: configuration.connectionId, model: configuration.synthesisModel, voice: configuration.voiceId },
+        transcription: { provider: configuration.transcriptionProvider ?? configuration.provider, connectionId: configuration.transcriptionConnectionId || (!configuration.transcriptionProvider || configuration.transcriptionProvider === configuration.provider ? configuration.connectionId || undefined : undefined), model: configuration.realtimeModel || undefined },
+        synthesis: { provider: configuration.provider, connectionId: configuration.connectionId || undefined, model: configuration.synthesisModel || undefined, voice: configuration.voiceId },
         mode: configuration.liveMode,
       })
-      if (myEpoch !== epoch.current) { await api.ai.speech.control({ sessionId: started.sessionId, action: 'stop' }); return }
+      if (myEpoch !== epoch.current || attempt !== launchEpoch.current) { await api.ai.speech.control({ sessionId: started.sessionId, action: 'stop' }); return }
       session.current = started.sessionId; setSessionId(started.sessionId); setState(started.state); setChoosing(false)
-    } catch (error) { if (myEpoch === epoch.current) { setState('stopped'); fail(error) } }
-    finally { if (myEpoch === epoch.current) pending.current = false }
+    } catch (error) { if (myEpoch === epoch.current && attempt === launchEpoch.current) { setState('stopped'); fail(error) } }
+    finally { if (myEpoch === epoch.current && attempt === launchEpoch.current) pending.current = false }
   }
   const stop = async () => {
     const id = session.current
@@ -128,7 +132,7 @@ export function VoiceControls(props: VoiceControlsProps) {
   const finish = () => { if (!held.current) return; held.current = false; setHolding(false); control('commit'); control('mute') }
   const selectVoice = async (id: string) => {
     if (!settings || session.current || !voices.some(voice => voice.id === id)) return
-    try { const saved = await api.backend.call<SpeechSettings>('configuration.speech.set', { voiceId: id }); setSettings(saved); setError('') } catch (error) { fail(error) }
+    try { const saved = await api.backend.call<{ revision: number; values: SpeechSettings }>('configuration.speech.set', { patch: { voiceId: id }, expectedRevision: settings.configurationRevision }); setSettings({ ...saved.values, configurationRevision: saved.revision }); setError('') } catch (error) { fail(error) }
   }
   const choose = async () => {
     const myEpoch = epoch.current
@@ -164,11 +168,16 @@ export function VoiceControls(props: VoiceControlsProps) {
     })()
   }, [props.response?.id, props.response?.text, props.executionState, sessionId, settings?.replyWithVoice, turnRevision])
 
+  React.useEffect(() => {
+    if (props.requested) void start()
+  }, [props.requested, props.conversationId])
+  const close = () => { launchEpoch.current++; pending.current = false; void stop(); setOpen(false); props.onClose?.() }
+
   const executing = props.executionState === 'running' || props.executionState === 'thinking' || props.executionState === 'queued'
   const orb: OrbState = error ? 'error' : state === 'speaking' ? 'speaking' : props.executionState === 'review' ? 'review' : props.executionState === 'working' ? 'working' : executing || state === 'processing' ? 'thinking' : state === 'stopped' ? 'idle' : state
   const status = error ? words('error') : words(orb)
-  if (!open) return <div className="assistant-voice-entry"><style>{css}</style><Button size="small" variant="ghost" onClick={() => void start()}>{words('start')}</Button></div>
-  return <section className="assistant-voice-panel" aria-label={words('heading')}>
+  if (!open) return props.hiddenLauncher ? null : <div className="assistant-voice-entry"><style>{css}</style><Button size="small" variant="ghost" onClick={() => void start()}>{words('start')}</Button></div>
+  const panel = <section className="assistant-voice-panel" aria-label={words('heading')}>
     <style>{css}</style><VoiceOrb state={orb} input={levels.input} output={levels.output} />
     <div className="assistant-voice-content"><span className="assistant-voice-status" role="status" aria-live="polite">{status}</span>{transcript && <p className="assistant-voice-transcript">{transcript}</p>}
       <div className="assistant-voice-actions">
@@ -176,12 +185,13 @@ export function VoiceControls(props: VoiceControlsProps) {
         {sessionId && settings?.liveMode === 'push-to-talk' && <Button size="small" className="assistant-voice-hold" aria-pressed={holding} onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); begin() }} onPointerUp={finish} onPointerCancel={finish} onBlur={finish} onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); begin() } }} onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); finish() } }}>{words('hold')}</Button>}
         {sessionId && settings?.liveMode === 'hands-free' && <Button size="small" onClick={() => control(state === 'muted' ? 'unmute' : 'mute')}>{words(state === 'muted' ? 'unmute' : 'mute')}</Button>}
         {sessionId && <Button size="small" variant="ghost" onClick={() => { cancel(); callbacks.current.onInterrupted?.() }}>{words('interrupt')}</Button>}
-        {sessionId ? <Button size="small" variant="ghost" onClick={() => void stop()}>{words('stop')}</Button> : <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={() => setOpen(false)}>{words('close')}</Button>}
+        {sessionId ? <Button size="small" variant="ghost" onClick={() => void stop()}>{words('stop')}</Button> : <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={close}>{words('close')}</Button>}
         {!sessionId && <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={() => void choose()}>{words('choose')}</Button>}
-        <Button size="small" variant="ghost" onClick={() => api.workspace.openFile(notePath)}>{words('settings')}</Button>
+        <Button size="small" variant="ghost" onClick={() => api.workspace.openSettings('plugin:assistant#voice')}>{words('settings')}</Button>
       </div>
     </div>
     {choosing && !sessionId && <div className="assistant-voice-select"><api.ui.settings.SelectField value={settings?.voiceId ?? ''} ariaLabel={words('choose')} options={[{ value: '', label: words('choose') }, ...voices.map(voice => ({ value: voice.id, label: voice.name }))]} onChange={value => void selectVoice(value)} />{!voices.length && <span>{words('noVoices')}</span>}</div>}
-    {error && <p className="assistant-voice-error" role="alert">{error}</p>}
+    {error && <ErrorNotice error={error} />}
   </section>
+  return props.hiddenLauncher ? <api.ui.Modal title={words('heading')} size="small" onClose={close}>{panel}</api.ui.Modal> : panel
 }

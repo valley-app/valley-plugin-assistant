@@ -1,3 +1,4 @@
+import type { ConfigurationApi } from './configuration/documents'
 import { readSpeechSettings } from './configuration/speech'
 import { openOwnedAttachment, findAttachment } from './attachments'
 import { readPdf } from './attachments/pdfPipeline'
@@ -24,16 +25,16 @@ function mimeFor(relPath: string, kind: IngestKind): string {
   return MIME_BY_EXT[ext] || (kind === 'pdf' ? 'application/pdf' : 'image/jpeg')
 }
 
-async function readBytes(_root: string, relPath: string): Promise<Uint8Array<ArrayBuffer>> {
-  const owned = await openOwnedAttachment(relPath)
-  if (!owned) await guardFilePath(_root, relPath, 'read')
-  const file = owned ?? await backendApi().files.openVault(relPath)
+async function readBytes(_root: string, relPath: string, api: ConfigurationApi = backendApi()): Promise<Uint8Array<ArrayBuffer>> {
+  const owned = await openOwnedAttachment(relPath, api)
+  if (!owned) await guardFilePath(_root, relPath, 'read', api)
+  const file = owned ?? await api.files.openVault(relPath)
   const chunks: Uint8Array[] = []
   let offset = 0
   try {
     if (file.size > 32 * 1024 * 1024) throw new Error(t('assistant.backend.attachmentLimit'))
     for (;;) {
-      const chunk = await backendApi().files.read(file.handle, { offset, maxBytes: 1024 * 1024 })
+      const chunk = await api.files.read(file.handle, { offset, maxBytes: 1024 * 1024 })
       const bytes = Uint8Array.from(atob(chunk.base64), (character) => character.charCodeAt(0))
       chunks.push(bytes); offset += bytes.length
       if (offset > 32 * 1024 * 1024) throw new Error(t('assistant.backend.attachmentLimit'))
@@ -43,36 +44,37 @@ async function readBytes(_root: string, relPath: string): Promise<Uint8Array<Arr
     let position = 0
     for (const bytes of chunks) { result.set(bytes, position); position += bytes.length }
     return result
-  } finally { await backendApi().files.release([file.handle]) }
+  } finally { await api.files.release([file.handle]) }
 }
 
 export async function ingestAttachment(
   root: string,
-  opts: { path: string; kind: IngestKind; parser?: string; startPage?: number; mode?: 'auto' | 'text' | 'visual'; signal?: AbortSignal }
+  opts: { path: string; kind: IngestKind; parser?: string; startPage?: number; mode?: 'auto' | 'text' | 'visual'; signal?: AbortSignal },
+  api: ConfigurationApi = backendApi()
 ): Promise<{ text: string; nextPage?: number; warnings?: string[] }> {
-  if (opts.kind === 'pdf') return readPdf(await readBytes(root, opts.path), { ...opts, vision: await visionReader(opts.parser) })
+  if (opts.kind === 'pdf') return readPdf(await readBytes(root, opts.path, api), { ...opts, vision: await visionReader(opts.parser, api) })
 
   if (opts.kind === 'audio') {
-    const metadata = await findAttachment(opts.path)
-    const owned = await openOwnedAttachment(opts.path)
-    if (!owned) await guardFilePath(root, opts.path, 'read')
-    const file = owned ?? await backendApi().files.openVault(opts.path)
+    const metadata = await findAttachment(opts.path, api)
+    const owned = await openOwnedAttachment(opts.path, api)
+    if (!owned) await guardFilePath(root, opts.path, 'read', api)
+    const file = owned ?? await api.files.openVault(opts.path)
     try {
-      const settings = await readSpeechSettings(root)
-      const result = await backendApi().ai.speech.transcribe({ provider: settings.transcriptionProvider ?? settings.provider, connectionId: settings.transcriptionConnectionId ?? settings.connectionId, model: settings.transcriptionModel, fileHandle: file.handle, fileName: metadata?.fileName ?? path.basename(opts.path), mimeType: metadata?.mime })
+      const settings = await readSpeechSettings(root, api)
+      const result = await api.ai.speech.transcribe({ provider: settings.transcriptionProvider ?? settings.provider, connectionId: settings.transcriptionConnectionId ?? settings.connectionId, model: settings.transcriptionModel, fileHandle: file.handle, fileName: metadata?.fileName ?? path.basename(opts.path), mimeType: metadata?.mime })
       return { text: result.text }
-    } finally { await backendApi().files.release([file.handle]) }
+    } finally { await api.files.release([file.handle]) }
   }
 
-  const vision = await visionReader(opts.parser)
+  const vision = await visionReader(opts.parser, api)
   if (vision && opts.kind === 'image') {
-    const bytes = await readBytes(root, opts.path)
+    const bytes = await readBytes(root, opts.path, api)
     let binary = ''
     for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768))
-    return { text: await vision(btoa(binary), 1, opts.signal, (await findAttachment(opts.path))?.mime ?? mimeFor(opts.path, opts.kind)) }
+    return { text: await vision(btoa(binary), 1, opts.signal, (await findAttachment(opts.path, api))?.mime ?? mimeFor(opts.path, opts.kind)) }
   }
   if (opts.parser && opts.parser !== 'markitdown') throw new Error('The configured vision connection is unavailable or does not support images')
 
-  const text = await runSkill(root, 'markitdown', { path: opts.path })
+  const text = await runSkill(root, 'markitdown', { path: opts.path }, api)
   return { text }
 }

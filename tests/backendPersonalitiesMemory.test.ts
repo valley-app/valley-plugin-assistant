@@ -41,13 +41,14 @@ describe('personalities', () => {
   })
 
   it('readConfig reads instructions/routing from the default personality', async () => {
-    await saveInstructions(root, 'CUSTOM BRIEF')
+    await saveInstructions(root, 'CUSTOM BRIEF', (await readPersonality(root, 'default'))!.configurationRevision!)
     const cfg = await readConfig(root)
     expect(cfg.instructions).toBe('CUSTOM BRIEF')
   })
 
   it('exactly one default — claiming it clears the flag on the previous default', async () => {
     await savePersonality(root, {
+      configurationRevision: (await readPersonality(root, 'default'))!.configurationRevision,
       id: 'default',
       name: 'Default',
       isDefault: true,
@@ -55,6 +56,8 @@ describe('personalities', () => {
       routing: { auto: true, default: { provider: 'openai', model: 'gpt-5' }, rules: [] }
     })
     await savePersonality(root, {
+      configurationRevision: 0,
+      configurationRevisions: (await listPersonalities(root))[0].configurationRevisions,
       id: 'coder',
       name: 'Coder',
       isDefault: true,
@@ -69,13 +72,14 @@ describe('personalities', () => {
 
   it('never deletes the default personality', async () => {
     await savePersonality(root, {
+      configurationRevision: (await readPersonality(root, 'default'))!.configurationRevision,
       id: 'default',
       name: 'Default',
       isDefault: true,
       instructions: 'default',
       routing: { auto: true, default: { provider: 'openai', model: 'gpt-5' }, rules: [] }
     })
-    await deletePersonality(root, 'default')
+    await deletePersonality(root, 'default', (await readPersonality(root, 'default'))!.configurationRevision!)
     expect(await readPersonality(root, 'default')).not.toBeNull()
   })
 })

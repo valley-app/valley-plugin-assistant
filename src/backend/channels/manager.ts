@@ -1,8 +1,11 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+type OwnerApi = PluginBackendOperationContext['api']
+import type { ConfigurationApi } from '../configuration/documents'
 import { importAttachment, findAttachment } from '../attachments'
 import { t, backendApi } from '../runtime'
 import * as fs from '../filesystem'
 import path from 'path-browserify'
-import type { ChannelInfo, ChannelMessage, CustomCommand, RoutingConfig } from '../../types'
+import type { ChannelsInfo, ChannelInfo, ChannelMessage, CustomCommand, RoutingConfig } from '../../types'
 import type { GuardOverrides } from '@valley/plugin-sdk/guard/types'
 import { capitalize } from '@valley/plugin-sdk/normalize'
 import { emitDriverEvent } from '../runtime'
@@ -18,8 +21,8 @@ import { dispatchTelegram } from './adapters/telegram'
 import { dispatchWhatsApp } from './adapters/whatsapp'
 import { InboundMediaQueue } from './ingestionQueue'
 import { ChannelActions, ChannelChoices, type ChannelActor, type PlanChannelAction } from './actions'
-import type { AssistantRepository } from '../persistence/repositories'
-import { readChannelConfigurations, writeChannelConfigurations } from '../configuration/channels'
+import { AssistantRepository } from '../persistence/repositories'
+import { channelConfigurationRevisions, readChannelConfigurations, writeChannelConfigurations } from '../configuration/channels'
 import { effectiveSettings } from '../configuration/settings'
 import { channelCapabilities } from './capabilities'
 import { DeliveryRejected } from './deliveryQueue'
@@ -69,6 +72,7 @@ type ChannelsFile = Record<string, ChannelConfig>
 
 /** The non-secret per-channel config a caller may patch (allow-list + routing/guard defaults). */
 export interface ChannelConfigPatch {
+  name?: string
   defaultHarness?: import('../../types').HarnessId | null
   allowFrom?: string[]
   defaultProfile?: string | null
@@ -109,6 +113,7 @@ class ChannelManager {
   private endpointHosts = new Map<string, string[]>()
   /** Live channel instances keyed by instance id (rebuilt from config). */
   private instances = new Map<string, MessagingChannel>()
+  private deferredConfiguration = new Map<string, string>()
   private generation = 0
   private registrations = new Set<Promise<unknown>>()
   private runtime?: ChannelRuntimeBinding
@@ -172,9 +177,9 @@ class ChannelManager {
     this.endpointHosts.set(type, [...hosts])
   }
 
-  private async readLegacyConfig(vaultRoot: string): Promise<ChannelsFile> {
+  private async readLegacyConfig(vaultRoot: string, api: ConfigurationApi = backendApi()): Promise<ChannelsFile> {
     try {
-      const parsed = JSON.parse(await fs.readFile(configPath(vaultRoot), 'utf8')) as unknown
+      const parsed = JSON.parse(await fs.readFile(configPath(vaultRoot), 'utf8', api)) as unknown
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
       const file: ChannelsFile = {}
       for (const [id, raw] of Object.entries(parsed as Record<string, unknown>)) {
@@ -205,8 +210,8 @@ class ChannelManager {
     }
   }
 
-  private async readConfig(vaultRoot: string): Promise<ChannelsFile> {
-    return readChannelConfigurations(vaultRoot, await this.readLegacyConfig(vaultRoot))
+  private async readConfig(vaultRoot: string, api: ConfigurationApi = backendApi()): Promise<ChannelsFile> {
+    return readChannelConfigurations(vaultRoot, await this.readLegacyConfig(vaultRoot, api), api)
   }
 
   private runtimeConfig(cfg: ChannelConfig): ChannelRuntimeConfig {
@@ -219,10 +224,10 @@ class ChannelManager {
     }
   }
 
-  async credential(vaultRoot: string, id: string, name?: string): Promise<string | null> {
-    const config = (await this.readConfig(vaultRoot))[id]
+  async credential(vaultRoot: string, id: string, name?: string, api: OwnerApi = backendApi()): Promise<string | null> {
+    const config = (await this.readConfig(vaultRoot, api))[id]
     if (!config) throw new Error(t('assistant.backend.unknownChannel', { value: id }))
-    return getCredential(vaultRoot, name ? channelSecretKey(id, name) : channelKey(id), this.endpoints(config.type))
+    return getCredential(vaultRoot, name ? channelSecretKey(id, name) : channelKey(id), this.endpoints(config.type), api)
   }
   endpoints(type: string): Array<{ host: string; port: number; security: 'tls' }> {
     const hosts = this.endpointHosts.get(type) ?? []
@@ -243,19 +248,19 @@ class ChannelManager {
     }
   }
 
-  private async isConfigured(vaultRoot: string, id: string, cfg: ChannelConfig): Promise<boolean> {
-    const hasToken = await hasSecret(vaultRoot, channelKey(id))
+  private async isConfigured(vaultRoot: string, id: string, cfg: ChannelConfig, api: OwnerApi = backendApi()): Promise<boolean> {
+    const hasToken = await hasSecret(vaultRoot, channelKey(id), api)
     if (cfg.type !== 'whatsapp') return hasToken
     return Boolean(
       hasToken &&
       cfg.phoneNumberId?.trim() &&
-      await hasSecret(vaultRoot, channelSecretKey(id, 'verifyToken')) &&
-      await hasSecret(vaultRoot, channelSecretKey(id, 'appSecret'))
+      await hasSecret(vaultRoot, channelSecretKey(id, 'verifyToken'), api) &&
+      await hasSecret(vaultRoot, channelSecretKey(id, 'appSecret'), api)
     )
   }
 
-  private async writeConfig(vaultRoot: string, file: ChannelsFile): Promise<void> {
-    await writeChannelConfigurations(vaultRoot, file)
+  private async writeConfig(vaultRoot: string, file: ChannelsFile, expectedRevisions: Record<string, number>): Promise<void> {
+    await writeChannelConfigurations(vaultRoot, file, expectedRevisions)
   }
 
   /**
@@ -283,6 +288,32 @@ class ChannelManager {
     return file
   }
 
+  async reconcileConfiguration(vaultRoot: string, previous: Record<string, object>, api: ConfigurationApi): Promise<{ state: 'applied' | 'deferred'; connectionIds: string[]; reason?: string }> {
+    const file = await readChannelConfigurations<ChannelsFile>(vaultRoot, {}, api)
+    const deferred: string[] = []
+    for (const id of new Set([...Object.keys(previous), ...Object.keys(file)])) {
+      if (JSON.stringify(previous[id]) === JSON.stringify(file[id])) continue
+      const existing = this.instances.get(id), cfg = file[id]
+      if (existing) {
+        try { await existing.stop() } catch (error) {
+          const reason = `Configuration saved, but stopping the previous transport failed: ${error instanceof Error ? error.message : String(error)}`
+          this.deferredConfiguration.set(id, reason); deferred.push(id); continue
+        }
+      }
+      this.deferredConfiguration.delete(id)
+      if (!cfg || existing && existing.type !== cfg.type) this.instances.delete(id)
+      if (cfg) {
+        const factory = this.factories.get(cfg.type)
+        if (!this.instances.has(id) && factory) this.instances.set(id, factory(id, cfg.name))
+        const channel = this.instances.get(id)
+        if (channel) channel.displayName = cfg.name
+        if (cfg.enabled) { deferred.push(id); this.deferredConfiguration.set(id, 'Configuration saved; the previous transport is stopped. Restart is pending backend activation and available credentials.') }
+      }
+    }
+    api.rpc.emit('channels.changed', {})
+    return deferred.length ? { state: 'deferred', connectionIds: deferred, reason: [...new Set(deferred.map(id => this.deferredConfiguration.get(id)!))].join(' ') } : { state: 'applied', connectionIds: [] }
+  }
+
   /** Start every enabled instance that has a token and isn't already running. */
   async ensureStarted(vaultRoot: string): Promise<void> {
     const version = this.generation
@@ -293,6 +324,7 @@ class ChannelManager {
         const token = await this.credential(vaultRoot, id)
         if (token && await this.isConfigured(vaultRoot, id, cfg)) await this.startChannel(vaultRoot, channel, token, cfg, version)
       }
+      if (channel.running) this.deferredConfiguration.delete(id)
     }
   }
 
@@ -354,18 +386,23 @@ class ChannelManager {
     return { id: attachment.id!, path: attachment.path }
   }
 
-  async list(vaultRoot: string): Promise<ChannelInfo[]> {
-    await this.ensureStarted(vaultRoot)
-    const file = await this.readConfig(vaultRoot)
+  async list(vaultRoot: string, api?: OwnerApi): Promise<ChannelInfo[]> { return (await this.listSnapshot(vaultRoot, api)).channels }
+
+  async listSnapshot(vaultRoot: string, api?: OwnerApi): Promise<ChannelsInfo> {
+    if (!api) await this.ensureStarted(vaultRoot)
+    const owner = api ?? backendApi()
+    const file = await this.readConfig(vaultRoot, owner)
     const out: ChannelInfo[] = []
-    for (const [id, channel] of this.instances) {
-      const cfg = file[id]
+    for (const [id, cfg] of Object.entries(file)) {
+      const channel = this.instances.get(id) ?? { type: cfg.type, displayName: cfg.name, running: false, connected: false, lastError: undefined }
       out.push({
         id,
+        configurationRevisions: channelConfigurationRevisions(file),
+        ...(this.deferredConfiguration.has(id) ? { configurationApplication: { state: 'deferred' as const, reason: this.deferredConfiguration.get(id)! } } : {}),
         type: channel.type,
         name: channel.displayName,
         displayName: channel.displayName,
-        configured: cfg ? await this.isConfigured(vaultRoot, id, cfg) : false,
+        configured: cfg ? await this.isConfigured(vaultRoot, id, cfg, owner) : false,
         running: channel.running,
         connected: Boolean(channel.running && channel.connected && !channel.lastError),
         allowFrom: cfg?.allowFrom ?? [],
@@ -384,11 +421,11 @@ class ChannelManager {
         error: channel.lastError
       })
     }
-    return out
+    return { channels: out, configurationRevisions: channelConfigurationRevisions(file) }
   }
 
   /** Create a new instance of `type` with a display name; returns its id. */
-  async add(vaultRoot: string, type: string, name: string): Promise<string> {
+  async add(vaultRoot: string, type: string, name: string, expectedRevisions: Record<string, number>): Promise<string> {
     if (!this.factories.has(type)) throw new Error(t('assistant.backend.unknownChannelType', { value: type }))
     const id = newInstanceId(type)
     const file = await this.readConfig(vaultRoot)
@@ -399,43 +436,44 @@ class ChannelManager {
       enabled: false,
       ...(type === 'whatsapp' ? { graphVersion: DEFAULT_WHATSAPP_GRAPH_VERSION, webhookPort: DEFAULT_WHATSAPP_WEBHOOK_PORT } : {})
     }
-    await this.writeConfig(vaultRoot, file)
+    await this.writeConfig(vaultRoot, file, expectedRevisions)
     await this.ensureInstances(vaultRoot)
     return id
   }
 
   /** Permanently remove an instance: stop it, drop its config entry + token. */
-  async remove(vaultRoot: string, id: string): Promise<void> {
-    this.instances.get(id)?.stop()
-    this.instances.delete(id)
+  async remove(vaultRoot: string, id: string, expectedRevisions: Record<string, number>): Promise<void> {
     const file = await this.readConfig(vaultRoot)
     if (file[id]) {
       delete file[id]
-      await this.writeConfig(vaultRoot, file)
+      await this.writeConfig(vaultRoot, file, expectedRevisions)
     }
+    await this.instances.get(id)?.stop()
+    this.instances.delete(id)
     await deleteSecret(vaultRoot, channelKey(id))
     await deleteSecret(vaultRoot, channelSecretKey(id, 'verifyToken'))
     await deleteSecret(vaultRoot, channelSecretKey(id, 'appSecret'))
   }
 
   /** Rename an instance's display name. */
-  async rename(vaultRoot: string, id: string, name: string): Promise<void> {
+  async rename(vaultRoot: string, id: string, name: string, expectedRevisions: Record<string, number>): Promise<void> {
     const file = await this.readConfig(vaultRoot)
     const cfg = file[id]
     if (!cfg) throw new Error(t('assistant.backend.unknownChannel', { value: id }))
     cfg.name = name.trim() || cfg.name
-    await this.writeConfig(vaultRoot, file)
+    await this.writeConfig(vaultRoot, file, expectedRevisions)
     const instance = this.instances.get(id)
     if (instance) instance.displayName = cfg.name
   }
 
-  async setConfig(vaultRoot: string, id: string, patch: ChannelConfigPatch): Promise<void> {
+  async setConfig(vaultRoot: string, id: string, patch: ChannelConfigPatch, expectedRevisions: Record<string, number>): Promise<void> {
     const version = this.generation
     await this.ensureInstances(vaultRoot)
     const channel = this.instances.get(id)
     if (!channel) throw new Error(t('assistant.backend.unknownChannel', { value: id }))
     const file = await this.readConfig(vaultRoot)
     const cfg = file[id]
+    if (patch.name !== undefined) cfg.name = patch.name.trim() || cfg.name
     if (patch.allowFrom) cfg.allowFrom = patch.allowFrom
     // `null` clears the default; `undefined` leaves it unchanged (partial patch).
     if (patch.defaultProfile !== undefined) cfg.defaultProfile = patch.defaultProfile ?? undefined
@@ -453,7 +491,8 @@ class ChannelManager {
     if (patch.webhookPort !== undefined) cfg.webhookPort = patch.webhookPort ?? undefined
     if (patch.publicCallbackUrl !== undefined) cfg.publicCallbackUrl = patch.publicCallbackUrl?.trim() || undefined
     file[id] = cfg
-    await this.writeConfig(vaultRoot, file)
+    await this.writeConfig(vaultRoot, file, expectedRevisions)
+    channel.displayName = cfg.name
     if (channel.running) {
       // Restart with the new config.
       const token = await this.credential(vaultRoot, id)
@@ -462,7 +501,7 @@ class ChannelManager {
     }
   }
 
-  async start(vaultRoot: string, id: string): Promise<void> {
+  async start(vaultRoot: string, id: string, expectedRevisions: Record<string, number>): Promise<void> {
     const version = this.generation
     await this.ensureInstances(vaultRoot)
     const channel = this.instances.get(id)
@@ -474,7 +513,7 @@ class ChannelManager {
     if (!await this.isConfigured(vaultRoot, id, cfg)) throw new Error(t('assistant.backend.missingConfiguration', { value: channel.displayName }))
     cfg.enabled = true
     file[id] = cfg
-    await this.writeConfig(vaultRoot, file)
+    await this.writeConfig(vaultRoot, file, expectedRevisions)
     if (!channel.running) await this.startChannel(vaultRoot, channel, token, cfg, version)
   }
 
@@ -488,7 +527,7 @@ class ChannelManager {
     if (failure?.status === 'rejected') throw failure.reason
   }
 
-  async stop(vaultRoot: string, id: string): Promise<void> {
+  async stop(vaultRoot: string, id: string, expectedRevisions: Record<string, number>): Promise<void> {
     await this.ensureInstances(vaultRoot)
     const channel = this.instances.get(id)
     if (!channel) throw new Error(t('assistant.backend.unknownChannel', { value: id }))
@@ -496,7 +535,7 @@ class ChannelManager {
     const cfg = file[id]
     cfg.enabled = false
     file[id] = cfg
-    await this.writeConfig(vaultRoot, file)
+    await this.writeConfig(vaultRoot, file, expectedRevisions)
     await channel.stop()
   }
 
@@ -532,26 +571,27 @@ class ChannelManager {
     }
   }
 
-  async dispatch(destination: MessageDestination, content: MessageContent, attachment?: ChannelDispatchAttachment): Promise<string[]> {
+  async dispatch(destination: MessageDestination, content: MessageContent, attachment?: ChannelDispatchAttachment, api: OwnerApi = backendApi()): Promise<string[]> {
     const { channelId, chatRef } = destination
     if (!channelId || !chatRef) throw new DeliveryRejected('A channel and recipient are required')
-    const cfg = (await this.readConfig('/vault'))[channelId]
+    const cfg = (await this.readConfig('/vault', api))[channelId]
     if (!cfg || !cfg.enabled || cfg.type !== destination.kind || !cfg.allowFrom.map(value => value.trim()).includes(chatRef)) throw new DeliveryRejected('Destination is not explicitly allowed for this connection')
-    const token = await this.credential('/vault', channelId)
+    const token = await this.credential('/vault', channelId, undefined, api)
     if (!token) throw new DeliveryRejected('The channel has no configured credential')
-    if (cfg.type === 'telegram') return dispatchTelegram(token, destination, content, attachment)
-    if (cfg.type === 'whatsapp') return dispatchWhatsApp(token, this.runtimeConfig(cfg), destination, content, attachment)
+    if (cfg.type === 'telegram') return dispatchTelegram(token, destination, content, attachment, api)
+    if (cfg.type === 'whatsapp') return dispatchWhatsApp(token, this.runtimeConfig(cfg), destination, content, attachment, api)
     throw new DeliveryRejected('Unsupported channel')
   }
 
-  async operationDescriptors(root: string, destination: MessageDestination) {
+  async operationDescriptors(root: string, destination: MessageDestination, api?: OwnerApi) {
+    const owner = api ?? backendApi()
     const protocol = channelCapabilities[destination.kind]
-    const config = destination.channelId ? (await this.readConfig(root))[destination.channelId] : undefined
+    const config = destination.channelId ? (await this.readConfig(root, owner))[destination.channelId] : undefined
     let reason = !config || config.type !== destination.kind ? 'Channel connection is unavailable' : !config.enabled ? 'Channel connection is disabled' : !destination.chatRef || !config.allowFrom.map(value => value.trim()).includes(destination.chatRef) ? 'Recipient is not allowed for this connection' : undefined
-    if (!reason && await secretState(root, channelKey(destination.channelId!)) !== 'ok') reason = 'Channel credential is missing or unreadable'
+    if (!reason && await secretState(root, channelKey(destination.channelId!), owner) !== 'ok') reason = 'Channel credential is missing or unreadable'
     if (!reason && destination.kind === 'whatsapp' && !config?.phoneNumberId) reason = 'WhatsApp phone number is not configured'
-    const applicationMaxBytes = (await effectiveSettings(root)).importMaxBytes
-    const receipts = destination.kind === 'whatsapp' && this.runtime ? await this.runtime.repository.rows<{ receivedAt: number }>('inbound_receipts', { conversationId: destination.conversationId }) : []
+    const applicationMaxBytes = (await effectiveSettings(root, owner)).importMaxBytes
+    const receipts = destination.kind === 'whatsapp' && this.runtime ? await (api ? new AssistantRepository(api.data) : this.runtime.repository).rows<{ receivedAt: number }>('inbound_receipts', { conversationId: destination.conversationId }) : []
     const windowOpen = destination.kind !== 'whatsapp' || receipts.some(receipt => receipt.receivedAt > Date.now() - 24 * 60 * 60 * 1000)
     const types = [...new Set(Object.values(channelCapabilities).flatMap(value => value.kinds))]
     return {

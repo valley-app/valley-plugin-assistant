@@ -1,11 +1,12 @@
 import { assertChatWritable } from './attachments'
 import { stopChatProcesses } from './processScopes'
-import type { PluginBackendApi } from '@valley/plugin-sdk'
+import type { PluginBackendApi, PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { AiChatRequest, AiStreamEvent } from '../types'
 import type { AiCompletion } from '@valley/plugin-sdk/ai'
 import { backendApi, withBackgroundOperation } from './runtime'
 
-const active = new Map<string, { api: PluginBackendApi; chatId?: string }>()
+type OwnerApi = PluginBackendOperationContext['api']
+const active = new Map<string, { api: OwnerApi; chatId?: string }>()
 export type DetailedCompletionResult = AiCompletion
 export type OneShotResult = Pick<AiCompletion, 'text' | 'inputTokens' | 'outputTokens' | 'finishReason'>
 
@@ -14,10 +15,9 @@ export function relayAiStream(api: PluginBackendApi, event: AiStreamEvent): void
   api.rpc.emit('stream', event)
   if (event.type === 'done') active.delete(event.requestId)
 }
-export async function startRun(_root: string, request: AiChatRequest): Promise<void> {
-  if (request.conversationId) await assertChatWritable(request.conversationId)
+export async function startRun(_root: string, request: AiChatRequest, api: OwnerApi = backendApi()): Promise<void> {
+  if (request.conversationId) await assertChatWritable(request.conversationId, api)
   if (active.has(request.requestId)) throw new Error('AI request is already running')
-  const api = backendApi()
   active.set(request.requestId, { api, chatId: request.conversationId })
   try { await api.ai.stream(request) }
   catch (error) {
@@ -26,15 +26,14 @@ export async function startRun(_root: string, request: AiChatRequest): Promise<v
     api.rpc.emit('stream', { requestId: request.requestId, type: 'done', finishReason: 'error' })
   }
 }
-export async function cancelRun(requestId: string): Promise<boolean> {
-  const api = active.get(requestId)?.api
+export async function cancelRun(requestId: string, owner?: OwnerApi): Promise<boolean> {
+  const api = owner ?? active.get(requestId)?.api
   if (!api) return false
   try { return await api.ai.cancel(requestId) } finally { active.delete(requestId) }
 }
-export function runDetailed(root: string, request: AiChatRequest, controller = new AbortController()): Promise<DetailedCompletionResult> {
+export function runDetailed(root: string, request: AiChatRequest, controller = new AbortController(), api: OwnerApi = backendApi()): Promise<DetailedCompletionResult> {
   return withBackgroundOperation(root, async () => {
-    const api = backendApi()
-    if (request.conversationId) await assertChatWritable(request.conversationId)
+    if (request.conversationId) await assertChatWritable(request.conversationId, api)
   if (active.has(request.requestId)) throw new Error('AI request is already running')
     controller.signal.throwIfAborted()
     active.set(request.requestId, { api, chatId: request.conversationId })
@@ -46,8 +45,8 @@ export function runDetailed(root: string, request: AiChatRequest, controller = n
   })
 }
 export const runOnce = (root: string, request: AiChatRequest): Promise<OneShotResult> => runDetailed(root, request)
-export async function cancelAllRuns(): Promise<void> { await Promise.allSettled([...active.keys()].map(cancelRun)) }
+export async function cancelAllRuns(): Promise<void> { await Promise.allSettled([...active.keys()].map(id => cancelRun(id))) }
 
-export async function cancelChatRuns(id: string): Promise<void> {
-  await Promise.all([stopChatProcesses(id), ...[...active].filter(([, run]) => run.chatId === id).map(([requestId]) => cancelRun(requestId))])
+export async function cancelChatRuns(id: string, api: OwnerApi = backendApi()): Promise<void> {
+  await Promise.all([stopChatProcesses(id, false, api), ...[...active].filter(([, run]) => run.chatId === id).map(([requestId]) => cancelRun(requestId, api))])
 }

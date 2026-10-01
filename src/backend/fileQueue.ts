@@ -1,5 +1,7 @@
 import * as fs from './filesystem'
 import path from 'path-browserify'
+import { backendApi } from './runtime'
+import type { StorageApi } from './filesystem'
 import { atomicWriteFile, queueFileWrite } from './filesystem'
 
 /**
@@ -20,13 +22,13 @@ import { atomicWriteFile, queueFileWrite } from './filesystem'
  * `ai` driver, which calls these helpers.
  */
 
-export function runExclusive<T>(file: string, operation: () => Promise<T>): Promise<T> {
-  return queueFileWrite(file, operation)
+export function runExclusive<T>(file: string, operation: () => Promise<T>, api: StorageApi = backendApi()): Promise<T> {
+  return queueFileWrite(file, operation, api)
 }
 
 /** Atomic full rewrite of a text file, serialized by path. Creates parent dirs. */
-export function queuedWrite(file: string, content: string): Promise<void> {
-  return runExclusive(file, () => atomicWriteFile(file, content))
+export function queuedWrite(file: string, content: string, api: StorageApi = backendApi()): Promise<void> {
+  return runExclusive(file, () => atomicWriteFile(file, content, api), api)
 }
 
 /**
@@ -35,11 +37,11 @@ export function queuedWrite(file: string, content: string): Promise<void> {
  * (e.g. a circular reference) throws before any byte is written and the
  * previous file is left intact (the rejection still propagates to the caller).
  */
-export function queuedWriteJson(file: string, value: unknown): Promise<void> {
+export function queuedWriteJson(file: string, value: unknown, api: StorageApi = backendApi()): Promise<void> {
   return runExclusive(file, async () => {
     const content = JSON.stringify(value, null, 2)
-    await atomicWriteFile(file, content)
-  })
+    await atomicWriteFile(file, content, api)
+  }, api)
 }
 
 /**
@@ -47,11 +49,11 @@ export function queuedWriteJson(file: string, value: unknown): Promise<void> {
  * One JSON object per line, trailing newline. Creates the file/dir on first
  * write. A no-op for an empty list (so callers can append unconditionally).
  */
-export function queuedAppendJsonl(file: string, records: readonly unknown[]): Promise<void> {
+export function queuedAppendJsonl(file: string, records: readonly unknown[], api: StorageApi = backendApi()): Promise<void> {
   if (records.length === 0) return Promise.resolve()
   return runExclusive(file, async () => {
-    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.mkdir(path.dirname(file), { recursive: true }, api)
     const text = records.map((r) => JSON.stringify(r)).join('\n') + '\n'
-    await fs.appendFile(file, text, 'utf8')
-  })
+    await fs.appendFile(file, text, 'utf8', api)
+  }, api)
 }

@@ -1,3 +1,4 @@
+import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { backendApi, backendClosing } from './runtime'
@@ -9,9 +10,9 @@ export function trackProcessScope(chatId: string, stop: () => void): () => void 
   callbacks.add(stop); active.set(chatId, callbacks)
   return () => { callbacks.delete(stop); if (!callbacks.size) active.delete(chatId) }
 }
-export async function stopChatProcesses(chatId: string, removeHome = false): Promise<void> {
+export async function stopChatProcesses(chatId: string, removeHome = false, api: Pick<PluginBackendOperationContext['api'], 'process'> = backendApi()): Promise<void> {
   for (const stop of active.get(chatId) ?? []) stop()
-  await backendApi().process.shutdown(runtimeScope(chatId), removeHome)
+  await api.process.shutdown(runtimeScope(chatId), removeHome)
 }
 export async function stopProjectProcesses(): Promise<void> {
   await Promise.all([...active.keys()].map(chatId => stopChatProcesses(chatId)))

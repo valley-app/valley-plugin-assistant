@@ -11,6 +11,7 @@ import { defineDriver, defineDriverMethod } from './contract'
  * agent loop and replies via `channels.send`.
  */
 const channelId = z.string().min(1)
+const expectedRevisions = z.record(z.number().int().nonnegative())
 const provider = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
 const connectionId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
 const modelRef = z.object({ provider, model: z.string(), connectionId: connectionId.optional() })
@@ -19,6 +20,7 @@ const guardEntry = z.object({
   allowPreApproval: z.boolean().optional()
 })
 const channelConfigPatch: z.ZodType<ChannelConfigPatch> = z.object({
+  name: z.string().min(1).max(256).optional(),
   defaultHarness: z.enum(['valley', 'deepseek', 'openai-modified']).nullable().optional(),
   allowFrom: z.array(z.string()).optional(),
   defaultProfile: z.string().nullable().optional(),
@@ -53,56 +55,57 @@ const channelConfigPatch: z.ZodType<ChannelConfigPatch> = z.object({
 })
 
 export const channelsDriver = defineDriver({
-  list: defineDriverMethod(z.object({}).optional(), async (root) => ({ channels: await channelManager.list(root) })),
-  add: defineDriverMethod(z.object({ type: z.string().min(1), name: z.string() }), async (root, payload) => {
+  list: defineDriverMethod(z.object({}).optional(), async (root) => channelManager.listSnapshot(root)),
+  add: defineDriverMethod(z.object({ type: z.string().min(1), name: z.string(), expectedRevisions }), async (root, payload) => {
       const { type, name } = payload
-      const id = await channelManager.add(root, type, name)
+      const id = await channelManager.add(root, type, name, payload.expectedRevisions)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { id, channels: await channelManager.list(root) }
+      return { id, ...await channelManager.listSnapshot(root) }
     }),
-  remove: defineDriverMethod(z.object({ channelId }), async (root, payload) => {
-      await channelManager.remove(root, payload.channelId)
+  remove: defineDriverMethod(z.object({ channelId, expectedRevisions }), async (root, payload) => {
+      await channelManager.remove(root, payload.channelId, payload.expectedRevisions)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
-  rename: defineDriverMethod(z.object({ channelId, name: z.string() }), async (root, payload) => {
+  rename: defineDriverMethod(z.object({ channelId, name: z.string(), expectedRevisions }), async (root, payload) => {
       const { channelId: id, name } = payload
-      await channelManager.rename(root, id, name)
+      await channelManager.rename(root, id, name, payload.expectedRevisions)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
   setSecret: defineDriverMethod(z.object({ channelId, secret: z.string() }), async (root, payload) => {
       const { channelId: id, secret } = payload
       await setSecret(root, channelKey(id), secret, await channelManager.credentialEndpoints(root, id))
       await channelManager.refresh(root, id)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
   setSecretField: defineDriverMethod(z.object({ channelId, key: z.enum(['verifyToken', 'appSecret']), secret: z.string() }), async (root, payload) => {
       const { channelId: id, key, secret } = payload
       await setSecret(root, channelSecretKey(id, key), secret, await channelManager.credentialEndpoints(root, id))
       await channelManager.refresh(root, id)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
   setConfig: defineDriverMethod(z.object({
       channelId,
-      config: channelConfigPatch
+      config: channelConfigPatch,
+      expectedRevisions
     }), async (root, payload) => {
       const { channelId: id, config } = payload
-      await channelManager.setConfig(root, id, config)
+      await channelManager.setConfig(root, id, config, payload.expectedRevisions)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
-  start: defineDriverMethod(z.object({ channelId }), async (root, payload) => {
-      await channelManager.start(root, payload.channelId)
+  start: defineDriverMethod(z.object({ channelId, expectedRevisions }), async (root, payload) => {
+      await channelManager.start(root, payload.channelId, payload.expectedRevisions)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
-  stop: defineDriverMethod(z.object({ channelId }), async (root, payload) => {
-      await channelManager.stop(root, payload.channelId)
+  stop: defineDriverMethod(z.object({ channelId, expectedRevisions }), async (root, payload) => {
+      await channelManager.stop(root, payload.channelId, payload.expectedRevisions)
       emitDriverEvent('channels', 'channels.changed', {})
-      return { channels: await channelManager.list(root) }
+      return channelManager.listSnapshot(root)
     }),
   send: defineDriverMethod(z.object({ channelId, chatRef: z.string(), text: z.string() }), async (root, payload) => {
       const { channelId: id, chatRef, text } = payload

@@ -13,6 +13,20 @@ const idle = async (runtime: ReturnType<typeof createBackendChannelFixture>['run
 }
 
 describe('backend channel interactions', () => {
+  it('delivers an ordinary answer once even if the model tries to send it as a tool', async () => {
+    const { runtime } = createBackendChannelFixture()
+    channelFixture.infer.mockImplementationOnce(async (_input: unknown, _context: unknown, hooks: RuntimeHooks) => {
+      const result = JSON.parse(await hooks.tool({ id: 'answer', name: 'channel_send', arguments: { deliveryKey: 'answer', content: { type: 'text', text: 'Four.' } } }))
+      expect(result).toMatchObject({ success: true, value: { delivery: 'automatic' } })
+      expect(channelFixture.dispatch).not.toHaveBeenCalled()
+      hooks.event({ type: 'message', message: { role: 'assistant', content: 'Four.' } })
+    })
+    const accepted = await runtime.inbound('telegram', inbound('What is two plus two?', 'sum'))
+    await idle(runtime, accepted.conversationId)
+    await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledOnce())
+    expect(channelFixture.dispatch.mock.calls[0][1]).toMatchObject({ type: 'text', text: 'Four.' })
+  })
+
   it('imports a generated document, discovers its durable reference, and sends the preserved original', async () => {
     const { runtime, api } = createBackendChannelFixture()
     const document = { id: '6944b2e6-9c5c-423e-8755-f1c0a13774c9', path: '.valley/plugins/data/assistant/attachment/report', fileName: 'Mechanik Lösung.pdf', mime: 'application/pdf', kind: 'pdf' as const, owned: true, sha256: 'hash', state: 'ready', createdAt: 1 }
@@ -32,13 +46,13 @@ describe('backend channel interactions', () => {
     const first = await runtime.inbound('telegram', inbound('Send my generated PDF', 'generated-report'))
     await vi.waitFor(() => expect(runtime.coordinator.snapshot(first.conversationId)?.state).toBe('IDLE'))
     expect(channelFixture.dispatch).toHaveBeenCalledOnce()
-    expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ conversationId: first.conversationId }), expect.objectContaining({ type: 'attachment', attachmentId: document.id }), { path: `/vault/${document.path}`, fileName: document.fileName, mime: 'application/pdf' })
+    expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ conversationId: first.conversationId }), expect.objectContaining({ type: 'attachment', attachmentId: document.id }), { path: `/vault/${document.path}`, fileName: document.fileName, mime: 'application/pdf' }, api)
     expect(api.files.release).toHaveBeenCalledWith(['original-pdf'])
     expect(api.agent.invoke).toHaveBeenCalledWith('scope', 'authorize.external', expect.objectContaining({ target: { kind: 'tool', id: 'channel.attachment_import', sideEffect: 'write' } }))
   })
 
   it.each(['private', 'supergroup', undefined] as const)('binds provider chat type %s to guarded Web App keyboard dispatch', async chatType => {
-    const { runtime } = createBackendChannelFixture()
+    const { runtime, api } = createBackendChannelFixture()
     let result = ''
     channelFixture.infer.mockImplementationOnce(async (_input: unknown, _context: unknown, hooks: RuntimeHooks) => { result = await hooks.tool({ id: 'keyboard-call', name: 'channel_send', arguments: { deliveryKey: 'web-app', content: { type: 'keyboard', text: 'Open the exercise', rows: [[{ label: 'Exercise', webApp: 'https://example.com/exercise' }]] } } }) })
     const first = await runtime.inbound('telegram', inbound('Open an exercise', `web-app-${chatType}`, { chatType }))
@@ -46,7 +60,7 @@ describe('backend channel interactions', () => {
     expect(runtime.coordinator.snapshot(first.conversationId)?.thread?.channelChatType).toBe(chatType)
     if (chatType === 'private') {
       expect(result).toContain('ACCEPTED')
-      expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ chatType: 'private' }), expect.objectContaining({ type: 'keyboard' }), undefined)
+      expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ chatType: 'private' }), expect.objectContaining({ type: 'keyboard' }), undefined, api)
     } else { expect(result).toContain('verified private chat'); expect(channelFixture.dispatch).not.toHaveBeenCalled() }
   })
 

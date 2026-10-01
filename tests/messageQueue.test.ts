@@ -9,6 +9,50 @@ const until = async (condition: () => boolean) => vi.waitFor(() => expect(condit
 afterEach(async () => { for (const backend of fixtures.splice(0)) { await backend.cleanup(); await disposeStore(backend.api) } })
 
 describe('durable backend message queue projections', () => {
+  it('keeps a failed background chat error out of the selected running chat', async () => {
+    const backend = fixture(), store = getStore(backend.api), failure = backend.gate(), success = backend.gate()
+    backend.model.mockImplementation(async (_session, turn) => {
+      if (turn?.text === 'Describe moss') { await failure.promise; throw new Error('Moss provider unavailable') }
+      await success.promise
+    })
+    await store.whenReady
+    await store.send('Describe moss'); const first = store.getSnapshot().active!.id
+    store.newChat()
+    await store.send('Describe ferns'); const second = store.getSnapshot().active!.id
+    await until(() => backend.model.mock.calls.length === 2)
+    failure.resolve()
+    await until(() => backend.coordinator.snapshot(first)?.state === 'FAILED')
+    expect(store.getSnapshot()).toMatchObject({ active: { id: second }, activeBusy: true, error: null })
+    await store.openChat(first)
+    expect(store.getSnapshot().error).toContain('Moss provider unavailable')
+    await store.openChat(second)
+    expect(store.getSnapshot().error).toBeNull()
+    success.resolve()
+    await until(() => !store.getSnapshot().busy)
+  })
+
+  it('keeps both running chats visible and streams the selected chat after switching', async () => {
+    const backend = fixture(), store = getStore(backend.api), gate = backend.gate()
+    backend.model.mockImplementation(async (session, _turn, controls) => { await controls.stream(`Writing ${session.conversationId}`); await gate.promise })
+    await store.whenReady
+    await store.send('Describe moss'); const first = store.getSnapshot().active!.id
+    store.newChat()
+    await store.send('Describe ferns'); const second = store.getSnapshot().active!.id
+    await until(() => backend.model.mock.calls.length === 2)
+    await store.reloadThreads()
+    expect(store.getSnapshot().busyChatIds).toEqual(expect.arrayContaining([first, second]))
+    expect(store.getSnapshot().runningChatCount).toBe(2)
+    expect(store.getSnapshot().threads.map(thread => thread.id)).toEqual(expect.arrayContaining([first, second]))
+    await store.openChat(first)
+    expect(store.getSnapshot()).toMatchObject({ active: { id: first }, activeBusy: true, sessionState: 'INFERRING', streamingText: `Writing ${first}` })
+    await store.openChat(second)
+    expect(store.getSnapshot()).toMatchObject({ active: { id: second }, activeBusy: true, streamingText: `Writing ${second}` })
+    expect(backend.model.mock.calls.every(([, , controls]) => !controls.signal.aborted)).toBe(true)
+    gate.resolve()
+    await until(() => !store.getSnapshot().busy)
+    expect(store.getSnapshot().runningChatCount).toBe(0)
+  })
+
   it('sends the current reviewed revision and instruction identity to approval without starting a renderer run', async () => {
     const backend = fixture(), store = getStore(backend.api)
     await store.whenReady

@@ -12,23 +12,23 @@ import { persistActivityText, appendActivity } from './activity'
 import { assertChatWritable } from './attachments'
 import { runExclusive } from './fileQueue'
 import { projectConfiguration } from './configuration/conversations'
-const projects = () => backendApi().data.dataset<AssistantProject & DatasetRecord>('projects')
+const projects = (api: PluginBackendOperationContext['api'] = backendApi()) => api.data.dataset<AssistantProject & DatasetRecord>('projects')
 const id = z.string().uuid()
-export async function projectFor(projectId: string): Promise<AssistantProject> {
-  const project = await projects().get({ id: projectId })
+export async function projectFor(projectId: string, api: PluginBackendOperationContext['api'] = backendApi()): Promise<AssistantProject> {
+  const project = await projects(api).get({ id: projectId })
   if (!project || project.deleting) throw new Error('Project is unavailable')
-  return projectConfiguration(VAULT_ROOT, project)
+  return projectConfiguration(VAULT_ROOT, project, undefined, undefined, api)
 }
-export async function rootsFor(project: AssistantProject): Promise<ProjectRoot[]> {
-  const roots = await backendApi().projects.roots(project.id)
+export async function rootsFor(project: AssistantProject, api: PluginBackendOperationContext['api'] = backendApi()): Promise<ProjectRoot[]> {
+  const roots = await api.projects.roots(project.id)
   return roots.sort((a, b) => (project.folders.indexOf(a.id) < 0 ? Infinity : project.folders.indexOf(a.id)) - (project.folders.indexOf(b.id) < 0 ? Infinity : project.folders.indexOf(b.id)))
 }
-export async function executionContext(chatId: string, api: Pick<PluginBackendOperationContext['api'], 'projects'> = backendApi()) {
-  const thread = await readChat(VAULT_ROOT, chatId)
+export async function executionContext(chatId: string, api: PluginBackendOperationContext['api'] = backendApi()) {
+  const thread = await readChat(VAULT_ROOT, chatId, api)
   if (!thread) throw new Error('Conversation is unavailable')
   const access = await api.projects.access()
-  const project = thread.projectId ? await projectFor(thread.projectId) : undefined
-  const selected = project ? (await rootsFor(project))[0] : undefined
+  const project = thread.projectId ? await projectFor(thread.projectId, api) : undefined
+  const selected = project ? (await rootsFor(project, api))[0] : undefined
   const relative = selected ? path.relative(access.root.path, selected.path) : ''
   const cwd = selected && relative !== '..' && !relative.startsWith('../') && !path.isAbsolute(relative) ? selected.path : access.cwd
   return { ...access, cwd, project, roots: [access.root] }
@@ -45,17 +45,17 @@ export async function projectRequest(method: string, payload: unknown, api: Plug
     const { chatId } = z.object({ chatId: z.string().min(1).max(256) }).strict().parse(payload)
     return executionContext(chatId, api)
   }
-  if (method === 'list') return Promise.all((await datasetRows(projects())).filter(project => !project.deleting).map(project => projectConfiguration(VAULT_ROOT, project)))
+  if (method === 'list') return Promise.all((await datasetRows(projects(api))).filter(project => !project.deleting).map(project => projectConfiguration(VAULT_ROOT, project, undefined, undefined, api)))
   if (method === 'create') {
     const { name } = z.object({ name: z.string().trim().min(1).max(256) }).strict().parse(payload)
     const project: AssistantProject = { id: crypto.randomUUID(), name, instructions: '', folders: [], deleting: false, createdAt: Date.now(), updatedAt: Date.now() }
-    await projects().insert({ ...project })
-    return projectConfiguration(VAULT_ROOT, project)
+    await projects(api).insert({ ...project })
+    return projectConfiguration(VAULT_ROOT, project, undefined, undefined, api)
   }
   if (method === 'file') {
     const input = z.object({ chatId: z.string().min(1).max(256), operation: z.enum(['list', 'read', 'write']), rootId: id, path: z.string().max(4096),
       activity: z.object({ runId: z.string(), callId: z.string() }).optional(), content: z.string().max(4 * 1024 * 1024).optional(), expected: z.object({ hash: z.string(), mtimeMs: z.number(), size: z.number() }).nullable().optional() }).strict().parse(payload)
-    await assertChatWritable(input.chatId)
+    await assertChatWritable(input.chatId, api)
     const context = await executionContext(input.chatId, api)
     const file = executionFile(context, input.rootId, input.path)
     let events = Promise.resolve(), eventFailure: unknown
@@ -82,27 +82,27 @@ export async function projectRequest(method: string, payload: unknown, api: Plug
     return await api.projects[input.operation](file)
     } finally { off(); await events; if (eventFailure) throw eventFailure }
   }
-  const input = z.object({ id, name: z.string().trim().min(1).max(256).optional(), instructions: z.string().max(100000).optional(), rootId: id.optional() }).strict().parse(payload)
+  const input = z.object({ id, name: z.string().trim().min(1).max(256).optional(), instructions: z.string().max(100000).optional(), expectedRevision: z.number().int().nonnegative().optional(), rootId: id.optional() }).strict().parse(payload)
   return runExclusive(`project:${input.id}`, async () => {
-    const project = await projectFor(input.id), api = backendApi()
-    if (method === 'context') return { project, roots: await rootsFor(project) }
+    const project = await projectFor(input.id, api)
+    if (method === 'context') return { project, roots: await rootsFor(project, api) }
     if (method === 'update') {
-      await projectConfiguration(VAULT_ROOT, project, { name: input.name, instructions: input.instructions })
-      await projects().update({ id: input.id }, { updatedAt: Date.now() })
+      await projectConfiguration(VAULT_ROOT, project, { name: input.name, instructions: input.instructions }, input.expectedRevision, api)
+      await projects(api).update({ id: input.id }, { updatedAt: Date.now() })
     } else if (method === 'addFolder') {
       const root = await api.projects.pick({ projectId: project.id })
-      if (root) await projects().update({ id: project.id }, { folders: [...new Set([...project.folders, root.id])], updatedAt: Date.now() })
+      if (root) await projects(api).update({ id: project.id }, { folders: [...new Set([...project.folders, root.id])], updatedAt: Date.now() })
     } else if (method === 'removeFolder') {
-      if (!input.rootId || !(await rootsFor(project)).some(root => root.id === input.rootId)) throw new Error('Unknown project folder')
+      if (!input.rootId || !(await rootsFor(project, api)).some(root => root.id === input.rootId)) throw new Error('Unknown project folder')
       for (const thread of await listChats(VAULT_ROOT, true)) if (thread.projectId === project.id) await cancelChatRuns(thread.id)
       await api.projects.revoke(input.rootId)
-      await projects().update({ id: project.id }, { folders: project.folders.filter(rootId => rootId !== input.rootId), updatedAt: Date.now() })
+      await projects(api).update({ id: project.id }, { folders: project.folders.filter(rootId => rootId !== input.rootId), updatedAt: Date.now() })
     } else if (method === 'delete') {
-      await projects().update({ id: project.id }, { deleting: true })
+      await projects(api).update({ id: project.id }, { deleting: true })
       await finishProjectDeletion(project)
       return null
     } else throw new Error('Unknown project operation')
-    return { project: await projectFor(input.id), roots: await rootsFor(await projectFor(input.id)) }
+    return { project: await projectFor(input.id, api), roots: await rootsFor(await projectFor(input.id, api), api) }
   })
 }
 

@@ -4,6 +4,7 @@ import { getStore, disposeStore } from '../src/store'
 import type { SessionSnapshot } from '../src/contracts/execution'
 import { sessionBackendFixture } from './sessionBackendFixture'
 import en from '../locales/en.json'
+import { assistantConfigurationReady, createAssistantApi, disposeAssistantConfiguration } from '../src/api'
 
 const fixtures: ReturnType<typeof sessionBackendFixture>[] = []
 const disposers: Array<() => Promise<void>> = []
@@ -20,6 +21,166 @@ afterEach(async () => {
 })
 
 describe('renderer and backend unload ownership', () => {
+  function configurationFixture() {
+    const backend = fixture(), host = { ...backend.api }, listeners = new Set<() => void>()
+    Reflect.deleteProperty(host, 'assistant'); Reflect.deleteProperty(host, 'channels')
+    const read = vi.fn(async () => ({ revision: 0, values: {} }))
+    const originalCall = host.backend.call, originalOn = host.backend.on
+    host.backend = { ...host.backend,
+      call: (async (method: string, input: unknown) => {
+        if (method === 'configuration.settings') return read()
+        if (method === 'ai.getConfig') return (await backend.api.assistant.getConfig()).data
+        if (method === 'ai.listChats') return (await backend.api.assistant.listChats()).data
+        if (method === 'ai.listPending') return (await backend.api.assistant.listPending()).data
+        if (method === 'channels.list') return (await backend.api.channels.list()).data
+        return originalCall(method, input)
+      }) as typeof host.backend.call,
+      on: ((name, listener) => {
+        if (name !== 'configuration.changed') return originalOn(name, listener)
+        const changed = () => listener({})
+        listeners.add(changed)
+        return () => { listeners.delete(changed) }
+      }) as typeof host.backend.on
+    }
+    return { backend, read, create: () => createAssistantApi(host), changed: () => listeners.forEach(listener => listener()) }
+  }
+
+  it('recovers the failed initial configuration snapshot without repeating later initialization effects', async () => {
+    const test = configurationFixture()
+    test.read.mockRejectedValueOnce(new Error('Plugin UI request timed out'))
+    const api = test.create(), store = getStore(api)
+    try {
+      await expect(store.whenReady).rejects.toThrow('Plugin UI request timed out')
+      expect(store.getSnapshot()).toMatchObject({ ready: false, config: null, error: 'Plugin UI request timed out' })
+      await until(() => store.getSnapshot().ready)
+      await expect(assistantConfigurationReady(api)).resolves.toBeUndefined()
+      expect(test.read).toHaveBeenCalledTimes(2)
+      expect(store.getSnapshot().error).toBeNull()
+      const id = store.getSnapshot().active?.id
+      test.changed(); test.changed()
+      await until(() => test.read.mock.calls.length === 3)
+      expect(store.getSnapshot().active?.id).toBe(id)
+      await expect(store.prepareUnload()).resolves.toBeUndefined()
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api) }
+  })
+
+  it('settles a failed initial read at unload without replaying reads or abandoning an accepted save', async () => {
+    const test = configurationFixture(), gate = test.backend.gate()
+    test.read.mockRejectedValue(new Error('Plugin UI request timed out'))
+    const api = test.create(), store = getStore(api)
+    try {
+      await expect(store.whenReady).rejects.toThrow('Plugin UI request timed out')
+      const save = vi.spyOn(api.assistant, 'saveChat').mockImplementation(async () => { await gate.promise; return { ok: true } })
+      store.newChat()
+      const thread = { ...store.getSnapshot().active!, messages: [{ role: 'user' as const, content: 'Retain this edit' }] }
+      const saving = store.saveThread(thread)
+      let prepared = false
+      const preparation = store.prepareUnload().then(() => { prepared = true })
+      await Promise.resolve()
+      expect(prepared).toBe(false)
+      gate.resolve(); await saving; await preparation
+      expect(save).toHaveBeenCalledTimes(1)
+      expect(test.read).toHaveBeenCalledTimes(1)
+      expect(store.getSnapshot()).toMatchObject({ ready: false, error: 'Plugin UI request timed out' })
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api) }
+  })
+
+  it('still refuses unload for a genuine failed save after the initial configuration read failed', async () => {
+    const test = configurationFixture()
+    test.read.mockRejectedValue(new Error('Plugin UI request timed out'))
+    const api = test.create(), store = getStore(api)
+    try {
+      await expect(store.whenReady).rejects.toThrow('Plugin UI request timed out')
+      const save = vi.spyOn(api.assistant, 'saveChat').mockResolvedValue({ ok: false, error: 'Disk unavailable' })
+      store.newChat()
+      const thread = { ...store.getSnapshot().active!, messages: [{ role: 'user' as const, content: 'Keep this edit' }] }
+      await expect(store.saveThread(thread)).rejects.toThrow('Disk unavailable')
+      await expect(store.prepareUnload()).rejects.toThrow('Disk unavailable')
+      expect(store.retainedThread(thread.id)?.messages).toEqual(thread.messages)
+      expect(save).toHaveBeenCalledTimes(2)
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api) }
+  })
+
+  it('bounds automatic configuration retries and resumes once an authoritative refresh succeeds', async () => {
+    vi.useFakeTimers()
+    const test = configurationFixture()
+    test.read.mockRejectedValue(new Error('Plugin UI request timed out'))
+    const api = test.create(), store = getStore(api)
+    try {
+      await expect(store.whenReady).rejects.toThrow('Plugin UI request timed out')
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(test.read).toHaveBeenCalledTimes(4)
+      expect(store.getSnapshot().ready).toBe(false)
+      test.read.mockResolvedValue({ revision: 2, values: {} })
+      test.changed(); test.changed()
+      await vi.advanceTimersByTimeAsync(0)
+      await store.whenReady
+      expect(test.read).toHaveBeenCalledTimes(5)
+      expect(store.getSnapshot()).toMatchObject({ ready: true, error: null })
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api); vi.useRealTimers() }
+  })
+
+  it.each(['dispose', 'prepareUnload'] as const)('cancels scheduled configuration recovery on %s', async transition => {
+    vi.useFakeTimers()
+    const test = configurationFixture()
+    test.read.mockRejectedValueOnce(new Error('Plugin UI request timed out'))
+    const api = test.create(), store = getStore(api)
+    try {
+      await expect(store.whenReady).rejects.toThrow('Plugin UI request timed out')
+      await store[transition]()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(test.read).toHaveBeenCalledTimes(1)
+      expect(store.getSnapshot().ready).toBe(false)
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api); vi.useRealTimers() }
+  })
+
+  it('does not activate a disposed owner when its initial configuration read finishes late', async () => {
+    const test = configurationFixture(), gate = test.backend.gate()
+    test.read.mockImplementation(async () => { await gate.promise; return { revision: 0, values: {} } })
+    const api = test.create(), store = getStore(api), guard = vi.spyOn(api.guard, 'registerRuntime'), channels = vi.spyOn(api.channels, 'list')
+    const disposal = store.dispose()
+    gate.resolve(); await disposal
+    expect(store.getSnapshot().ready).toBe(false)
+    expect(guard).not.toHaveBeenCalled()
+    expect(channels).not.toHaveBeenCalled()
+    disposeAssistantConfiguration(api)
+  })
+
+  it('defers late initialization effects while preparing and resumes them only after cancellation', async () => {
+    const test = configurationFixture(), gate = test.backend.gate()
+    test.read.mockImplementation(async () => { await gate.promise; return { revision: 0, values: {} } })
+    const api = test.create(), store = getStore(api), guard = vi.spyOn(api.guard, 'registerRuntime'), channels = vi.spyOn(api.channels, 'list')
+    try {
+      const preparing = store.prepareUnload()
+      gate.resolve(); await preparing
+      expect(store.getSnapshot().ready).toBe(false)
+      expect(guard).not.toHaveBeenCalled()
+      expect(channels).not.toHaveBeenCalled()
+      store.resumeAfterUnloadCancellation()
+      await store.whenReady
+      expect(store.getSnapshot().ready).toBe(true)
+      expect(guard).toHaveBeenCalledTimes(1)
+      expect(channels).toHaveBeenCalledTimes(1)
+      expect(test.read).toHaveBeenCalledTimes(1)
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api) }
+  })
+
+  it('preserves a newer chat selection and save error when configuration recovers', async () => {
+    const test = configurationFixture()
+    test.read.mockRejectedValueOnce(new Error('Plugin UI request timed out'))
+    const api = test.create(), store = getStore(api)
+    try {
+      await expect(store.whenReady).rejects.toThrow('Plugin UI request timed out')
+      vi.spyOn(api.assistant, 'saveChat').mockResolvedValue({ ok: false, error: 'Disk unavailable' })
+      store.newChat()
+      const thread = { ...store.getSnapshot().active!, messages: [{ role: 'user' as const, content: 'Keep this selection' }] }
+      await expect(store.saveThread(thread)).rejects.toThrow('Disk unavailable')
+      await until(() => store.getSnapshot().ready)
+      expect(store.getSnapshot()).toMatchObject({ ready: true, error: 'Disk unavailable', active: { id: thread.id } })
+      expect(store.retainedThread(thread.id)?.messages).toEqual(thread.messages)
+    } finally { await disposeStore(api); disposeAssistantConfiguration(api) }
+  })
+
   it('prepares the renderer without cancelling backend work and accepts backend messages while it is detached', async () => {
     const backend = fixture(), finish = backend.gate()
     backend.model.mockImplementationOnce(async (_session, _turn, controls) => { await finish.promise; await controls.message({ role: 'assistant', content: 'Moss identified' }) })
@@ -177,6 +338,7 @@ describe('renderer and backend unload ownership', () => {
     const dispose = register(backend.api); disposers.push(dispose)
     const store = getStore(backend.api)
     await expect(store.whenReady).rejects.toThrow(en['assistant.guard.persistenceFailed'])
+    await expect(store.prepareUnload()).rejects.toThrow(en['assistant.guard.persistenceFailed'])
     expect(guard).not.toHaveBeenCalled()
     expect(store.getSnapshot().ready).toBe(false)
     expect(backend.pendingApprovals.size).toBe(1)

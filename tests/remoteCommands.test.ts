@@ -21,6 +21,16 @@ function fixture() {
 }
 
 describe('backend conversation commands', () => {
+  it('welcomes Telegram start commands without clearing conversation history or using a model', async () => {
+    const f = fixture()
+    f.thread.messages.push({ role: 'user', content: 'Describe moss' })
+    expect(await f.dispatch('/start')).toEqual({ handled: true })
+    expect(f.ports.reply).toHaveBeenCalledWith(expect.stringContaining('Ready. Send a message'))
+    expect(f.ports.clear).not.toHaveBeenCalled()
+    expect(f.ports.config).not.toHaveBeenCalled()
+    expect(f.thread.messages).toHaveLength(1)
+  })
+
   it('lists builtins and custom commands with the narrowest description, without model access', async () => {
     const f = fixture()
     f.overall.push({ name: 'note', description: 'Overall note', prompt: 'Overall' })

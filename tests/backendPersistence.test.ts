@@ -1,12 +1,17 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginCredentialApi } from '@valley/plugin-sdk/pluginNetwork'
-import type { PluginBackendApi } from '@valley/plugin-sdk'
+import { valleyCancellationOf } from '@valley/plugin-sdk/valleyCancellation'
+import type { PluginBackendOperationContext, PluginBackendApi } from '@valley/plugin-sdk'
 import { initBackend } from '../src/backend/runtime'
 import { releaseFileAccess, readFile, writeFile, storageLocation } from '../src/backend/filesystem'
 import { readChat, saveChat, appendMemory, readMemory } from '../src/backend/store'
 import { getCredential, channelKey, setSecret } from '../src/backend/secrets'
 import { register } from '../src/backend/index'
+import { AssistantRuntime } from '../src/backend/engine/service'
+import type { CoordinatorPorts } from '../src/backend/engine/coordinator'
+import { dispatchTelegram } from '../src/backend/channels/adapters/telegram'
+import { dispatchWhatsApp } from '../src/backend/channels/adapters/whatsapp'
 import { activityRequest, appendActivity } from '../src/backend/activity'
 import { importAttachment, discardAttachment, resumeAttachmentCleanup, importTransferredAttachments } from '../src/backend/attachments'
 import { deleteChat, renameChat, saveGuardOverrides, listChats, clearChat, rebuildChatSearch } from '../src/backend/threads'
@@ -14,6 +19,15 @@ import { projectRequest, resumeProjectCleanup, executionContext, executionFile }
 import { datasetFixture } from './backendDatasetFixture'
 const files = new Map<string, Uint8Array>()
 const grants = new Map<string, string>()
+const revisions = new Map<string, { content: string | null; revision: number }>()
+const snapshot = (path: string) => {
+  const content = files.has(path) ? decoder.decode(files.get(path)) : null
+  const previous = revisions.get(path)
+  const value = { content, revision: previous ? previous.revision + Number(previous.content !== content) : content === null ? 0 : 1 }
+  revisions.set(path, value)
+  return value
+}
+const operation = (owner: PluginBackendOperationContext['api'] = api as unknown as PluginBackendApi): PluginBackendOperationContext => ({ id: crypto.randomUUID(), api: owner, cancellation: valleyCancellationOf(new AbortController()) })
 let ledger: Uint8Array | null = null
 let writing: Uint8Array[] = []
 let readOffset = 0
@@ -21,11 +35,22 @@ const encoder = new TextEncoder(), decoder = new TextDecoder()
 const locate = (location: { handle: string; path: string }) => `${grants.get(location.handle)}/${location.path}`.replace(/\/$/, '')
 const credentials = { state: vi.fn<PluginCredentialApi['state']>(async () => 'ok'), handle: vi.fn<PluginCredentialApi['handle']>(async () => 'opaque-handle'), set: vi.fn<PluginCredentialApi['set']>(), delete: vi.fn<PluginCredentialApi['delete']>() }
 const rpc = { handleOperation: vi.fn<PluginBackendApi['rpc']['handleOperation']>(() => () => {}), handle: vi.fn<PluginBackendApi['rpc']['handle']>(() => () => {}), emit: vi.fn() }
-const api: { process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: Pick<PluginBackendApi['settings'], 'get'>; data: PluginBackendApi['data']; ai: Pick<PluginBackendApi['ai'], 'onStream' | 'cancel' | 'connections' | 'models'>; policy: Pick<PluginBackendApi['policy'], 'read' | 'checkFile'>; rpc: typeof rpc; storage: Pick<PluginBackendApi['storage'], 'open'|'close'|'stat'|'readBytes'|'write'|'writeBytes'|'mkdir'|'move'|'remove'|'list'>; credentials: typeof credentials; sealed: Pick<PluginBackendApi['sealed'], 'openRead'|'readChunk'|'beginWrite'|'writeChunk'|'commitWrite'|'close'> } = {
+const api: { process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: Pick<PluginBackendApi['settings'], 'get'>; data: PluginBackendApi['data']; ai: Pick<PluginBackendApi['ai'], 'onStream' | 'cancel' | 'connections' | 'models'>; policy: Pick<PluginBackendApi['policy'], 'read' | 'checkFile'>; rpc: typeof rpc; storage: Pick<PluginBackendApi['storage'], 'readDocument'|'writeDocument'|'writeDocuments'|'open'|'close'|'stat'|'readBytes'|'write'|'writeBytes'|'mkdir'|'move'|'remove'|'list'>; credentials: typeof credentials; sealed: Pick<PluginBackendApi['sealed'], 'openRead'|'readChunk'|'beginWrite'|'writeChunk'|'commitWrite'|'close'> } = {
   process: { shutdown: async () => {} }, settings: { get: () => ({}) }, data: datasetFixture(), ai: { onStream: () => () => {}, cancel: async () => true, connections: async () => [], models: async () => [] },
   policy: { checkFile: async () => {}, read: async () => ({ defaultWrite: { decision: 'confirm' }, tools: {}, commands: {}, files: { visitMode: 'allow-all-except-blocked', defaultRead: { decision: 'allow' }, defaultWrite: { decision: 'confirm' }, allowedToVisit: ['**'], allowedToWrite: [], blocked: [], readOverrides: {}, writeOverrides: {} }, dangerousMode: { enabled: false, scope: 'off' }, pluginPresets: {} }) },
   rpc,
   storage: {
+    readDocument: async location => { const value = snapshot(locate(location)); return { content: value.content ?? '', revision: value.revision } },
+    writeDocument: async (location, input) => { const result = await api.storage.writeDocuments([{ location, ...input }]); return { revision: result.revisions[0] } },
+    writeDocuments: async entries => {
+      const values = entries.map(entry => ({ ...entry, path: locate(entry.location), previous: snapshot(locate(entry.location)) }))
+      for (const value of values) if (value.expectedRevision !== value.previous.revision) throw Object.assign(new Error('Revision conflict'), { code: 'REVISION_CONFLICT', status: 409, currentRevision: value.previous.revision })
+      return { revisions: values.map(value => {
+        if (value.content === null) files.delete(value.path)
+        else files.set(value.path, encoder.encode(value.content))
+        return snapshot(value.path).revision
+      }) }
+    },
     open: vi.fn<PluginBackendApi['storage']['open']>(async ({ area, path, mode }) => { const handle = crypto.randomUUID(); grants.set(handle, area === 'metadata' ? `.valley/${path}` : path); return { handle, path, kind: 'directory', mode } }),
     close: async (handle: string) => { grants.delete(handle) },
     stat: async (location) => { const path = locate(location), value = files.get(path); return value ? { name: path.split('/').at(-1) ?? '', kind: 'file', size: value.length, mtimeMs: 1 } : null },
@@ -46,14 +71,14 @@ const api: { process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: P
     commitWrite: async () => { ledger = Buffer.concat(writing) }, close: async () => {}
   }
 }
-beforeEach(() => { files.clear(); grants.clear(); ledger = null; api.data = datasetFixture(); vi.clearAllMocks(); initBackend(api as unknown as PluginBackendApi) })
+beforeEach(() => { files.clear(); grants.clear(); revisions.clear(); ledger = null; api.data = datasetFixture(); vi.clearAllMocks(); initBackend(api as unknown as PluginBackendApi) })
 afterEach(async () => { await releaseFileAccess() })
 describe('Assistant package persistence', () => {
   it('resolves external and home paths in ordinary Chat only with Full access', async () => {
     await saveChat('/vault', { id: 'native-chat', title: 'Code', createdAt: 1, updatedAt: 1, messages: [{ role: 'user', content: 'Create a fern study.' }] })
     const root = { id: crypto.randomUUID(), projectId: 'access-full', path: '/', name: 'full' }
     const access = vi.fn(async () => ({ mode: 'full' as const, root, cwd: '/fixture/home', home: '/fixture/home' }))
-    const context = await executionContext('native-chat', { projects: { access } } as unknown as Pick<PluginBackendApi, 'projects'>)
+    const context = await executionContext('native-chat', { ...api, projects: { access } } as unknown as PluginBackendApi)
     const dispose = register({ ...api, projects: { access } } as unknown as PluginBackendApi)
     try {
       const request = rpc.handle.mock.calls.find(([method]) => method === 'projects.request')![1]
@@ -125,21 +150,86 @@ describe('Assistant package persistence', () => {
   it('joins accepted RPC persistence before closing storage and rejects new work during unload', async () => {
     const dispose = register(api as unknown as PluginBackendApi)
     let finish!: () => void
-    const original = api.storage.write
-    const write = vi.spyOn(api.storage, 'write').mockImplementationOnce(async (...args) => { await new Promise<void>(resolve => { finish = resolve }); return original(...args) })
+    const original = api.storage.writeDocument
+    const write = vi.spyOn(api.storage, 'writeDocument').mockImplementationOnce(async (...args) => { await new Promise<void>(resolve => { finish = resolve }); return original(...args) })
     const close = vi.spyOn(api.storage, 'close')
     try {
       const save = rpc.handle.mock.calls.find(([method]) => method === 'ai.writeRule')![1]
-      const saving = save({ name: 'forest', content: 'Preserve the wetlands' })
+      const saving = save({ name: 'forest', content: 'Preserve the wetlands', expectedRevision: 0 })
       await vi.waitFor(() => expect(write).toHaveBeenCalledOnce())
       let disposed = false
       const draining = dispose().then(() => { disposed = true })
-      await expect(save({ name: 'late', content: 'not accepted' })).rejects.toThrow('closing')
-      await Promise.resolve(); expect(disposed).toBe(false); expect(close).not.toHaveBeenCalled()
+      await expect(save({ name: 'late', content: 'not accepted', expectedRevision: 0 })).rejects.toThrow('closing')
+      await Promise.resolve(); expect(disposed).toBe(false)
+      const heldGrant = write.mock.calls[0][0].handle
+      expect(close).not.toHaveBeenCalledWith(heldGrant)
       finish(); await saving; await draining
       expect([...files.values()].some(value => decoder.decode(value) === 'Preserve the wetlands')).toBe(true)
       expect(close).toHaveBeenCalled()
     } finally { finish?.(); await dispose(); write.mockRestore(); close.mockRestore() }
+  })
+
+  it('keeps the real submit command pending through the scoped run and final save', async () => {
+    await saveChat('/vault', { id: 'owned-submit', title: 'Owned', createdAt: 1, updatedAt: 1, messages: [] })
+    let finish!: () => void
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, _turn, controls) => {
+      expect(controls.api).toBe(owner)
+      await new Promise<void>(resolve => { finish = resolve })
+      await controls.message({ role: 'assistant', content: 'Owner reply' })
+    })
+    const owner = { ...api, storage: { ...api.storage, move: vi.fn(api.storage.move) }, data: { ...api.data, transaction: vi.fn(api.data.transaction) } } as unknown as PluginBackendOperationContext['api']
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const handler = rpc.handleOperation.mock.calls.find(([method]) => method === 'command.session.submit')![1]
+      let completed = false
+      const result = Promise.resolve(handler({ id: 'owned-turn', conversationId: 'owned-submit', text: 'Hello' }, operation(owner))).then(value => { completed = true; return value })
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+      expect(completed).toBe(false)
+      finish(); expect(await result).toMatchObject({ state: 'IDLE', thread: { messages: [{ content: 'Owner reply' }] } })
+      expect(owner.storage.move).toHaveBeenCalled()
+      expect(owner.data.transaction).toHaveBeenCalled()
+    } finally { finish?.(); await dispose(); run.mockRestore() }
+  })
+
+  it('rejects a real chat command after its scoped write is revoked without using background storage', async () => {
+    await saveChat('/vault', { id: 'revoked-rename', title: 'Original', createdAt: 1, updatedAt: 1, messages: [] })
+    const dispose = register(api as unknown as PluginBackendApi)
+    let release!: () => void, revoked = false
+    const move = vi.fn<PluginBackendApi['storage']['move']>(async (from, to) => { await new Promise<void>(resolve => { release = resolve }); if (revoked) throw new Error('Operation revoked'); return api.storage.move(from, to) })
+    const owner = { ...api, storage: { ...api.storage, move } } as unknown as PluginBackendOperationContext['api']
+    try {
+      const ready = rpc.handle.mock.calls.find(([method]) => method === 'ai.listChats')![1]
+      await ready({})
+      const background = vi.spyOn(api.storage, 'move')
+      const handler = rpc.handleOperation.mock.calls.find(([method]) => method === 'command.renameChat')![1]
+      const result = Promise.resolve(handler({ id: 'revoked-rename', title: 'Denied title' }, operation(owner)))
+      await vi.waitFor(() => expect(release).toBeTypeOf('function')); revoked = true; release()
+      await expect(result).rejects.toThrow('Operation revoked')
+      expect(background).not.toHaveBeenCalled()
+      expect((await readChat('/vault', 'revoked-rename'))?.title).toBe('Original')
+      background.mockRestore()
+    } finally { release?.(); await dispose() }
+  })
+
+  it('keeps provider sends and endpoint credential rebinding on the scoped operation API', async () => {
+    const handle = crypto.randomUUID()
+    const credentials = { ...api.credentials, state: vi.fn(async () => 'ok'), handle: vi.fn(async () => handle) }
+    let provider: 'telegram' | 'whatsapp' = 'telegram'
+    const fetchStream = vi.fn(async () => ({ status: 200, headers: {}, streamId: 'stream' }))
+    const readStream = vi.fn(async () => ({ done: true, bodyBase64: btoa(JSON.stringify(provider === 'telegram' ? { ok: true, result: { message_id: 9 } } : { messages: [{ id: 'reply' }] })) }))
+    const owner = { ...api, credentials, network: { fetchStream, readStream, cancel: vi.fn(async () => {}) } } as unknown as PluginBackendOperationContext['api']
+    expect(await dispatchTelegram(handle, { kind: 'telegram', conversationId: 'chat', chatRef: '9' }, { type: 'text', text: 'Scoped send' }, undefined, owner)).toEqual(['9'])
+    expect(fetchStream.mock.calls).toHaveLength(1)
+    provider = 'whatsapp'
+    await getCredential('/vault', 'channel:fixture', [{ host: 'graph.facebook.com', port: 443, security: 'tls' }], owner)
+    expect(await dispatchWhatsApp(handle, { type: 'whatsapp', phoneNumberId: 'number' }, { kind: 'whatsapp', conversationId: 'chat', chatRef: '9' }, { type: 'text', text: 'Scoped send' }, undefined, owner)).toEqual(['reply'])
+    expect(credentials.handle).toHaveBeenCalledTimes(2)
+    expect(api.credentials.handle).not.toHaveBeenCalled()
+    expect(fetchStream).toHaveBeenCalledTimes(2)
+    expect(readStream).toHaveBeenCalledTimes(2)
+    fetchStream.mockRejectedValueOnce(new Error('Operation revoked'))
+    await expect(dispatchTelegram(handle, { kind: 'telegram', conversationId: 'chat', chatRef: '9' }, { type: 'text', text: 'Rejected send' }, undefined, owner)).rejects.toThrow('Operation revoked')
+    expect(owner.network.cancel).toHaveBeenCalledOnce()
   })
 
   it('keeps a held storage grant and physical write on its captured backend API', async () => {
@@ -370,8 +460,8 @@ it('hides empty histories without deleting records and keeps queued or attachmen
   const { listChats, rebuildChatSearch } = await import('../src/backend/threads')
   const empty = { id: 'empty-draft', title: 'New chat', createdAt: 1, updatedAt: 1, messages: [] }
   await saveChat('/vault', empty)
-  await saveChat('/vault', { ...empty, id: 'queued-draft', pendingMessages: [{ id: 'queued', text: 'Describe moss' }] })
-  await saveChat('/vault', { ...empty, id: 'attachment-chat', messages: [{ role: 'user', content: '', attachmentFiles: [{ fileName: 'fern.png', path: 'fern.png', kind: 'image' }] }] })
+  await saveChat('/vault', { ...empty, configurationRevision: undefined, id: 'queued-draft', pendingMessages: [{ id: 'queued', text: 'Describe moss' }] })
+  await saveChat('/vault', { ...empty, configurationRevision: undefined, id: 'attachment-chat', messages: [{ role: 'user', content: '', attachmentFiles: [{ fileName: 'fern.png', path: 'fern.png', kind: 'image' }] }] })
   await rebuildChatSearch('/vault')
   expect((await listChats('/vault')).map(chat => chat.id)).toEqual(expect.arrayContaining(['queued-draft', 'attachment-chat']))
   expect((await listChats('/vault')).some(chat => chat.id === empty.id)).toBe(false)

@@ -21,8 +21,8 @@ function fixture() {
   }
   Object.assign(mock.api.ai, { speech })
   mock.api.backend.call = vi.fn(async (method: string, input?: unknown) => {
-    if (method === 'configuration.speech.set') Object.assign(configuration, input)
-    return configuration
+    if (method === 'configuration.speech.set') Object.assign(configuration, (input as { patch: object }).patch)
+    return { revision: 0, values: { ...configuration } }
   }) as typeof mock.api.backend.call
   initRuntime(mock.api)
   const onTranscript = vi.fn(), onError = vi.fn(), onInterrupted = vi.fn()
@@ -34,6 +34,33 @@ function fixture() {
 async function start() { fireEvent.click(screen.getByRole('button', { name: 'Start voice' })); await screen.findByRole('button', { name: 'Hold to talk' }) }
 
 describe('voice session lifecycle', () => {
+  it('resolves empty optional provider overrides through the core defaults', async () => {
+    const test = fixture()
+    Object.assign(test.configuration, { connectionId: '', transcriptionConnectionId: '', synthesisModel: '', realtimeModel: '' })
+    render(<VoiceControls {...test.props} />)
+    await start()
+    expect(test.speech.voices).toHaveBeenCalledWith({ provider: 'elevenlabs', connectionId: undefined })
+    expect(test.speech.start).toHaveBeenCalledWith(expect.objectContaining({ transcription: expect.objectContaining({ connectionId: undefined, model: undefined }), synthesis: expect.objectContaining({ connectionId: undefined, model: undefined }) }))
+  })
+
+  it('starts from the sidebar request without a composer launcher, stops and can reopen', async () => {
+    const test = fixture(), onClose = vi.fn()
+    const view = render(<VoiceControls {...test.props} hiddenLauncher onClose={onClose} />)
+    expect(screen.queryByRole('button', { name: 'Start voice' })).toBeNull()
+    view.rerender(<VoiceControls {...test.props} hiddenLauncher requested onClose={onClose} />)
+    await screen.findByRole('button', { name: 'Hold to talk' })
+    fireEvent.click(screen.getByRole('button', { name: 'End voice' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'End voice' })).toBeNull())
+    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0])
+    expect(onClose).toHaveBeenCalledOnce()
+    view.rerender(<VoiceControls {...test.props} hiddenLauncher requested={false} onClose={onClose} />)
+    view.rerender(<VoiceControls {...test.props} hiddenLauncher requested onClose={onClose} />)
+    await screen.findByRole('button', { name: 'Hold to talk' })
+    test.emit({ sessionId: 'session-a', conversationId: 'chat-a', type: 'transcript', utteranceId: 'reopened', text: 'Describe the meadow', final: true })
+    expect(test.props.onTranscript).toHaveBeenCalledWith({ id: 'reopened', text: 'Describe the meadow' })
+    await act(async () => { await Promise.resolve() })
+  })
+
   it('subscribes before starting, sends PTT controls in order and only commits each final transcript once', async () => {
     const test = fixture()
     render(<VoiceControls {...test.props} />)
@@ -83,7 +110,7 @@ describe('voice session lifecycle', () => {
     const picker = await screen.findByRole('combobox', { name: 'Choose voice' })
     expect(test.speech.start).not.toHaveBeenCalled()
     fireEvent.change(picker, { target: { value: 'voice-fern' } })
-    await waitFor(() => expect(test.api.backend.call).toHaveBeenCalledWith('configuration.speech.set', { voiceId: 'voice-fern' }))
+    await waitFor(() => expect(test.api.backend.call).toHaveBeenCalledWith('configuration.speech.set', { patch: { voiceId: 'voice-fern' }, expectedRevision: 0 }))
   })
 
   it('speaks only new response IDs and routes interruption once', async () => {

@@ -33,10 +33,10 @@ export async function dispatchConversationCommand(input: ConversationCommandInpu
   }
   if (cmd === 'clear' || cmd === 'reset') {
     await ports.clear(); await ports.reply('Conversation cleared (saved memory kept). Starting fresh.')
-  } else if (cmd === 'help') {
+  } else if (cmd === 'help' || cmd === 'start') {
     const custom = new Map<string, CustomCommand>()
     for (const item of [...await ports.commands(), ...(input.channel?.commands ?? []), ...(input.thread.commands ?? [])]) if (!isBuiltinCommand(item.name)) custom.set(item.name.toLowerCase(), item)
-    await ports.reply(helpText() + (custom.size ? `\n\nCustom commands:\n${[...custom.values()].map(item => `/${item.name}${item.description ? ` — ${item.description}` : ''}`).join('\n')}` : ''))
+    await ports.reply((cmd === 'start' ? 'Ready. Send a message to start chatting.\n\n' : '') + helpText() + (custom.size ? `\n\nCustom commands:\n${[...custom.values()].map(item => `/${item.name}${item.description ? ` — ${item.description}` : ''}`).join('\n')}` : ''))
   } else if (cmd === 'profile') {
     if (!arg) await ports.reply(`Personality: ${input.thread.profileId ?? 'default'}`)
     else if (/^(default|none|reset|clear)$/i.test(arg)) { await ports.update({ profileId: undefined }); await ports.reply('Personality set to default.') }
