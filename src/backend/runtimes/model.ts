@@ -24,7 +24,7 @@ export function deepseekMessage(value: unknown): AiMessage {
   const role = ['user', 'assistant', 'tool', 'system'].includes(text(message.role)) ? message.role as AiMessage['role'] : 'system'
   return { role, content: typeof message.content === 'string' ? message.content : blocks.filter(block => block.type === 'text').map(block => text(block.text)).join('\n'), ...(toolCalls.length ? { toolCalls } : {}), ...(message.toolCallId ? { toolCallId: text(message.toolCallId) } : {}) }
 }
-export async function bridgeModel(input: { params: Record<string, unknown>; request: AiChatRequest; context: PluginBackendOperationContext; send(value: unknown): Promise<void>; onText(text: string): void; active: Map<string, string>; continuations?: Map<number, AiMessage['continuation']>; prepare?(request: AiChatRequest): Promise<AiChatRequest> }): Promise<void> {
+export async function bridgeModel(input: { params: Record<string, unknown>; request: AiChatRequest; context: PluginBackendOperationContext; send(value: unknown): Promise<void>; onText(text: string): void; onProgress?(): void; active: Map<string, string>; continuations?: Map<number, AiMessage['continuation']>; prepare?(request: AiChatRequest): Promise<AiChatRequest> }): Promise<void> {
   const { params, request, context, send } = input
   const body = params
   if (body.model !== request.model) throw new Error('Runtime requested a different model')
@@ -45,7 +45,10 @@ export async function bridgeModel(input: { params: Record<string, unknown>; requ
   const emittedCalls = new Set<string>()
   const chunk = (chunk: unknown) => send({ jsonrpc: '2.0', method: 'valley/ai/chunk', params: { id: params.id, chunk } })
   const dispatch = async (event: AiStreamEvent): Promise<void> => {
+    context.cancellation.throwIfAborted()
     if (event.type === 'text') {
+      if (!event.text) return
+      input.onProgress?.()
       if (textIndex < 0) {
         textIndex = index++
         await chunk({ type: 'block-start', index: textIndex, blockType: 'text' })
@@ -55,6 +58,7 @@ export async function bridgeModel(input: { params: Record<string, unknown>; requ
     } else if (event.type === 'tool_call') {
       if (emittedCalls.has(event.call.id)) return
       emittedCalls.add(event.call.id)
+      input.onProgress?.()
       const call: AiToolCall = event.call, position = index++, argumentsText = JSON.stringify(call.arguments)
       await chunk({ type: 'block-start', index: position, blockType: 'tool-call' })
       await chunk({ type: 'tool-call-delta', index: position, id: call.id, name: call.name, argumentsDelta: argumentsText })
@@ -62,17 +66,24 @@ export async function bridgeModel(input: { params: Record<string, unknown>; requ
     } else if (event.type === 'error') throw new Error(event.error)
   }
   const off = context.api.ai.onStream(event => { if (event.requestId === id) chain = chain.then(() => dispatch(event)).catch(error => { failure ??= error; void context.api.ai.cancel(id).catch(() => {}) }) })
+  let interrupt!: (error: Error) => void
+  const interrupted = new Promise<never>((_resolve, reject) => { interrupt = reject })
+  void interrupted.catch(() => {})
+  const abort = () => { off(); interrupt(new Error('Model request cancelled')) }
+  context.cancellation.addEventListener('abort', abort, { once: true })
+  if (context.cancellation.aborted) abort()
+  const complete = (request: AiChatRequest) => { context.cancellation.throwIfAborted(); return Promise.race([context.api.ai.complete(request), interrupted]) }
   try {
     const assembled: AiChatRequest = { ...request, requestId: id, messages: [...(system ? [system] : []), ...history, ...messages.filter(message => message.role !== 'system')], tools }
     const prepared = input.prepare ? await input.prepare(assembled) : assembled
-    let completion = await context.api.ai.complete({ ...prepared, origin: request.origin ?? 'harness', operation: `deepseek.${text(body.purpose) || 'chat'}` })
+    let completion = await complete({ ...prepared, origin: request.origin ?? 'harness', operation: `deepseek.${text(body.purpose) || 'chat'}` })
     await chain
     if (failure) throw failure
     if (!content.trim() && !emittedCalls.size && !completion.text.trim() && !completion.toolCalls.length) {
       context.cancellation.throwIfAborted()
       id = crypto.randomUUID()
       input.active.set(nativeId, id)
-      completion = await context.api.ai.complete({ ...prepared, requestId: id, origin: request.origin ?? 'harness', operation: `deepseek.${text(body.purpose) || 'chat'}` })
+      completion = await complete({ ...prepared, requestId: id, origin: request.origin ?? 'harness', operation: `deepseek.${text(body.purpose) || 'chat'}` })
       await chain
       if (failure) throw failure
     }
@@ -83,5 +94,5 @@ export async function bridgeModel(input: { params: Record<string, unknown>; requ
     if (textIndex >= 0) await chunk({ type: 'block-end', index: textIndex, block: { type: 'text', text: content } })
     await chunk({ type: 'usage', usage: { inputTokens: completion.inputTokens ?? 0, outputTokens: completion.outputTokens ?? 0 } })
     await chunk({ type: 'finish', reason: { kind: completion.toolCalls.length ? 'tool-calls' : 'stop' } })
-  } finally { off(); input.active.delete(nativeId); await context.api.ai.cancel(id) }
+  } finally { off(); context.cancellation.removeEventListener('abort', abort); input.active.delete(nativeId); void context.api.ai.cancel(id).catch(() => {}) }
 }

@@ -10,70 +10,27 @@ const mock = createMockValleyApi()
 beforeAll(() => initRuntime(mock.api))
 
 // Imported after initRuntime so the module's `runtime.React` is already assigned.
-import { PermissionControl, ModelPicker, EffortPicker, type PermMode } from '../src/Page'
+import { PermissionControl, ModelPicker, EffortPicker } from '../src/Page'
 
 afterEach(cleanup)
 
-/** Render the control and open its popover (the menu only mounts while open). */
-function openMenu(active: PermMode, onPick: (m: PermMode) => void = vi.fn()): ReturnType<typeof render> {
-  mock.menus.length = 0
-  const utils = render(<PermissionControl active={active} onPick={onPick} />)
-  fireEvent.click(utils.getByLabelText('Assistant permissions'))
-  return utils
-}
-
 describe('PermissionControl', () => {
-  it('offers only vault and full access', () => {
-    openMenu('vault')
-    expect(screen.getAllByRole('menuitemradio').map(item => item.querySelector('.assistant-perm-label')?.textContent)).toEqual([
-      'Vault only',
-      'Full access'
-    ])
+  it('uses the compact host-owned access widget without supplying policy or a selected mode', () => {
+    const host = mock.accessControl, onChanged = vi.fn()
+    render(<PermissionControl onChanged={onChanged} />)
+    expect(host).toHaveBeenCalled()
+    expect(Object.keys(host.mock.calls.at(-1)![0]).sort()).toEqual(['disabled', 'iconOnly', 'onChange', 'variant'])
+    expect(host.mock.calls.at(-1)![0]).toMatchObject({ variant: 'compact' })
+    fireEvent.click(screen.getByRole('button', { name: 'Host access control' }))
+    expect(onChanged).toHaveBeenCalledOnce()
+    expect(mock.driverCalls.some(call => call.method === 'saveGuard')).toBe(false)
+    host.mockClear()
   })
-
-  it('checks the active row — the danger level when a bypass is active', () => {
-    openMenu('full')
-    expect(screen.getByRole('menuitemradio', { name: /Full access/ })).toHaveAttribute('aria-checked', 'true')
+  it('passes disabled state through to the host control', () => {
+    render(<PermissionControl disabled onChanged={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Host access control' })).toBeDisabled()
   })
-
-  it('emits "danger" when the dangerous level is picked', () => {
-    const onPick = vi.fn()
-    openMenu('vault', onPick)
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Full access/ }))
-    expect(onPick).toHaveBeenCalledWith('full')
-  })
-
-  it('the closed button mirrors the active mode glyph', () => {
-    const { getByLabelText, rerender } = render(<PermissionControl active="vault" onPick={vi.fn()} />)
-    const btn = (): HTMLElement => getByLabelText('Assistant permissions')
-    expect(btn().querySelector('svg')).toBeTruthy() // hand
-    expect(btn().textContent).not.toContain('»')
-
-    rerender(<PermissionControl active="vault" onPick={vi.fn()} />)
-    expect(btn().textContent).not.toContain('»')
-    expect(btn().querySelector('svg')).toBeTruthy()
-
-    rerender(<PermissionControl active="full" onPick={vi.fn()} />)
-    expect(btn().querySelector('svg')).toBeTruthy() // warning triangle
-  })
-
-  it('returns to vault access when selected', () => {
-    const onPick = vi.fn()
-    openMenu('full', onPick)
-    fireEvent.click(screen.getByRole('menuitemradio', { name: /Vault only/ }))
-    expect(onPick).toHaveBeenCalledWith('vault')
-  })
-  it('closes on Escape and returns keyboard focus to its trigger', () => {
-    openMenu('vault')
-    fireEvent.keyDown(screen.getByRole('menuitemradio', { name: /Vault only/ }), { key: 'ArrowDown' })
-    expect(screen.getByRole('menuitemradio', { name: /Full access/ })).toHaveFocus()
-    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
-    expect(screen.queryByRole('menu')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Assistant permissions' })).toHaveFocus()
-  })
-
 })
-
 
 it('focuses the selected model and supports keyboard selection in the compact menu', () => {
   const onSelect = vi.fn()

@@ -1,6 +1,8 @@
 import { assistantConfigurationReady } from './api'
 import type { SessionSnapshot } from './contracts/execution'
 import { uiText } from './localization'
+import { transportValue } from './backend/transport'
+import { admitTurn } from './backend/engine/responsiveness'
 import type { ValleyPluginApi } from './api'
 import { AGENT_TOOL_PROVIDER_V1, redactSecrets, resolveGuard, type GuardRuntimeBridge } from '@valley/plugin-sdk'
 import type { AiAttachment, AiChatSummary, AiChatThread, AiMemoryEntry, AiMessage, AiProviderId, AssistantConfig, ChannelMessage, InboundAttachment, RoutingConfig } from './types'
@@ -166,6 +168,8 @@ class AssistantStore {
   private voiceConversationId?: string
   private sessions = new Map<string, SessionSnapshot>()
   private deliveryErrors = new Map<string, string>()
+  private conversationErrors = new Map<string, string>()
+  private admissions = new Map<string, Set<AbortController>>()
   private offConversations: (() => void) | null = null
   private offSessions: (() => void) | null = null
   private offBackendErrors: Array<() => void> = []
@@ -351,7 +355,8 @@ class AssistantStore {
     const activeId = this.state.active?.id
     const activeRun = activeId ? this.runs.get(activeId) : undefined
     const session = activeId ? this.sessions.get(activeId) : undefined
-    const sessionBusy = session && !['IDLE','FAILED','INTERRUPTED','AWAITING_QUESTION','AWAITING_APPROVAL'].includes(session.state)
+    const isSessionBusy = (value: SessionSnapshot) => !['IDLE','FAILED','INTERRUPTED','AWAITING_QUESTION','AWAITING_APPROVAL'].includes(value.state) && !(value.state === 'QUEUED' && value.queue.length > 0 && value.queue.every(turn => turn.admissionPending || turn.editing))
+    const sessionBusy = session && isSessionBusy(session)
     const activeStreaming = Boolean(sessionBusy || Boolean(activeRun) && !activeRun!.awaitingApproval)
     const pending =
       activeId != null
@@ -368,13 +373,13 @@ class AssistantStore {
       sessionState: session?.state,
       runningChatCount: new Set([...this.sessions.values()].filter(value => !['IDLE', 'FAILED', 'INTERRUPTED', 'QUEUED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)).map(value => value.conversationId).concat([...this.runs.keys()])).size,
       voiceConversationId: this.voiceConversationId,
-      busyChatIds: [...new Set([...this.sessions.values()].filter(value => !['IDLE', 'FAILED', 'INTERRUPTED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)).map(value => value.conversationId).concat([...this.runs.keys()], [...this.processingMessages]))],
+      busyChatIds: [...new Set([...this.sessions.values()].filter(isSessionBusy).map(value => value.conversationId).concat([...this.runs.keys()], [...this.processingMessages], [...this.admissions.keys()]))],
       ready: this.state.ready,
       config: this.state.config,
       threads: [...threads.values()],
       active: this.state.active ? { ...this.state.active, messages: [...this.state.active.messages] } : null,
-      busy: [...this.sessions.values()].some(value => !['IDLE','FAILED','INTERRUPTED','AWAITING_QUESTION','AWAITING_APPROVAL'].includes(value.state)) || this.runs.size > 0 || this.processingMessages.size > 0,
-      activeBusy: Boolean(sessionBusy || activeRun) || this.processingMessages.has(activeId ?? '') || this.preparing,
+      busy: [...this.sessions.values()].some(isSessionBusy) || this.runs.size > 0 || this.processingMessages.size > 0 || this.admissions.size > 0,
+      activeBusy: Boolean(sessionBusy || activeRun) || this.processingMessages.has(activeId ?? '') || this.admissions.has(activeId ?? '') || this.preparing,
       stopped: session?.state === 'INTERRUPTED' || this.stoppedChats.has(activeId ?? ''),
       queuePaused: session?.paused ?? this.pausedMessages.has(activeId ?? ''),
       streaming: activeStreaming,
@@ -383,7 +388,7 @@ class AssistantStore {
       lastModel: this.state.lastModel,
       pending,
       dangerous: this.state.config?.guard.dangerousMode ?? null,
-      error: session?.error || this.deliveryErrors.get(activeId ?? '') || this.state.error || (!this.state.ready ? this.initializationError ?? null : null),
+      error: session?.error || this.conversationErrors.get(activeId ?? '') || this.deliveryErrors.get(activeId ?? '') || this.state.error || (!this.state.ready ? this.initializationError ?? null : null),
       canGoBack: this.chatHistoryIndex > 0,
       canGoForward: this.chatHistoryIndex < this.chatHistory.length - 1
     }
@@ -394,9 +399,11 @@ class AssistantStore {
     this.listeners.forEach((cb) => cb())
   }
 
-  private trackWork(work: Promise<void>): Promise<void> {
+  private trackWork(work: Promise<void>, conversationId?: string): Promise<void> {
     const tracked = work.catch((error) => {
-      this.state.error = error instanceof Error ? error.message : String(error)
+      const message = error instanceof Error ? error.message : String(error)
+      if (conversationId) this.conversationErrors.set(conversationId, message)
+      else this.state.error = message
     }).finally(() => {
       this.pendingWork.delete(tracked)
       this.notify()
@@ -767,24 +774,6 @@ class AssistantStore {
 
   // ── Dangerous mode ───────────────────────────────────────────────────────
 
-  async setAccessMode(mode: 'vault' | 'full'): Promise<void> {
-    try {
-      if (mode === 'full') await this.enableDangerousMode('session')
-      else await this.disableDangerousMode()
-    } catch (error) { this.state.error = String(error); this.notify(); throw error }
-  }
-
-  async enableDangerousMode(scope: 'chat' | 'channel' | 'session'): Promise<void> {
-    await this.saveDangerous({ enabled: true, scope })
-    this.audit({ ts: Date.now(), caller: 'agent', decision: 'bypass', source: 'dangerous-mode', reason: `Full access enabled (${scope})`, targetKind: 'tool' })
-  }
-
-  async disableDangerousMode(): Promise<void> {
-    const cfg = this.state.config
-    if (!cfg) return
-    await this.saveDangerous({ ...cfg.guard.dangerousMode, enabled: false, scope: 'off' })
-  }
-
   /** Set the global default-write decision (Claude-style persistent permission toggle). */
   async setDefaultWrite(decision: GuardDecision): Promise<void> {
     const cfg = this.state.config
@@ -795,21 +784,12 @@ class AssistantStore {
     await this.api.assistant.saveGuard(guard)
   }
 
-  private async saveDangerous(d: GuardDangerousMode): Promise<void> {
-    const cfg = this.state.config
-    if (!cfg) return
-    const guard = { ...cfg.guard, dangerousMode: d }
-    const result = await this.api.assistant.saveGuard(guard)
-    if (!result.ok) throw new Error(result.error || 'Access mode could not be saved')
-    this.state.config = { ...cfg, guard }
-    this.notify()
-  }
-
   interruptVoice(): void {
     if (this.state.active) void this.api.backend.call('session.interruptVoice', { conversationId: this.state.active.id })
   }
 
   stop(id = this.state.active?.id): void {
+    if (id) for (const admission of this.admissions.get(id) ?? []) admission.abort()
     if (id && this.sessions.has(id)) { void this.api.backend.call('session.stop', { conversationId: id }); return }
     const run = id ? this.runs.get(id) : undefined
     if (run && id) {
@@ -848,15 +828,18 @@ class AssistantStore {
     if (this.preparing || this.disposed || (!text.trim() && !attachments?.length)) return Promise.resolve()
     if (!this.state.active || this.state.active.source) this.newChat()
     const thread = this.state.active!
-    return this.trackWork((async () => {
-      await this.whenReady
+    this.conversationErrors.delete(thread.id)
+    const controller = new AbortController(), admissions = this.admissions.get(thread.id) ?? new Set<AbortController>()
+    admissions.add(controller); this.admissions.set(thread.id, admissions); this.notify()
+    return this.trackWork(admitTurn(async admission => {
+      await admission.step('loading conversation settings', () => this.whenReady)
       if (text.trim() === '/plan') { await this.startPlanning(); return }
       if (text.trim() === '/clear') { await this.clearActive(); return }
       if (!thread.messages.length && thread.titleOrigin !== 'manual') { thread.title = titleFrom(text.trim() || attachments?.map(item => item.fileName).join(', ') || 'New chat'); thread.titleOrigin = 'fallback' }
-      const session = await this.api.backend.call<SessionSnapshot>('session.submit', { id: submissionId, conversationId: thread.id, text: text.trim(), attachments, thread, origin })
+      const session = await admission.step('submitting the instruction', () => this.api.backend.callOperation<SessionSnapshot>('session.submit', transportValue({ id: submissionId, conversationId: thread.id, text: text.trim(), attachments, thread, origin }), { cancellation: valleyCancellationOf(controller) }))
       this.unsavedThreads.delete(thread.id)
       this.acceptSession(session)
-    })())
+    }, controller.signal).catch(error => { controller.abort(); throw error }).finally(() => { admissions.delete(controller); if (!admissions.size) this.admissions.delete(thread.id) }), thread.id)
   }
 
   getDraft(id: string): { text: string; attachments: InboundAttachment[] } {
@@ -1593,6 +1576,7 @@ class AssistantStore {
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal
     this.disposed = true
+    for (const admissions of this.admissions.values()) for (const admission of admissions) admission.abort()
     clearTimeout(this.initializationRetry)
     this.initializationRetry = undefined
     this.approvals.pause()

@@ -4,6 +4,7 @@ import { AssistantRepository } from '../src/backend/persistence/repositories'
 import type { SessionSnapshot, TurnSubmission } from '../src/contracts/execution'
 import { datasetFixture } from './backendDatasetFixture'
 import { createMockValleyApi, type MockOptions } from './mock'
+import { encodePluginBackendOperationValue } from '@valley/plugin-sdk/pluginBackendOperations'
 
 export function deferred() {
   let resolve!: () => void
@@ -52,6 +53,7 @@ export function sessionBackendFixture(options: MockOptions = {}) {
     return originalCall(method, raw)
   })
   mock.api.backend.call = call as typeof mock.api.backend.call
+  mock.api.backend.callOperation = (async (method, payload) => { encodePluginBackendOperationValue(payload); return call(method, payload) }) as typeof mock.api.backend.callOperation
   mock.api.backend.on = ((name, listener) => {
     if (name !== 'session.changed') return originalOn(name, listener)
     listeners.add(listener)

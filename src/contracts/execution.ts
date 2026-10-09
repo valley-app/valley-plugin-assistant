@@ -4,6 +4,8 @@ import type { ContextUsage } from './context'
 export const sessionStates = ['IDLE', 'QUEUED', 'PREPARING', 'INFERRING', 'AWAITING_TOOLS', 'AWAITING_APPROVAL', 'EXECUTING_TOOLS', 'AWAITING_QUESTION', 'COMPACTING', 'INTERRUPTED', 'FAILED'] as const
 export type SessionState = typeof sessionStates[number]
 export interface QueuedTurn {
+  admissionPending?: boolean
+  targetReference?: string
   inputFingerprint?: string
   questionId?: string
   channelActor?: { senderId: string; topicId?: string; chatType?: import('./channel').MessageDestination['chatType'] }
@@ -39,6 +41,8 @@ export interface SessionEvent {
   payload: unknown
 }
 export interface TurnSubmission {
+  admissionPending?: boolean
+  targetReference?: string
   inputFingerprint?: string
   questionId?: string
   channelActor?: { senderId: string; topicId?: string; chatType?: import('./channel').MessageDestination['chatType'] }

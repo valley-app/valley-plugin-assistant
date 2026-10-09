@@ -32,6 +32,7 @@ export interface AiProviderStatus {
     envKey?: boolean
     savedKey?: boolean
         savedKeyUnreadable?: boolean
+        savedKeyUnchecked?: boolean
   }
     baseUrl?: string
     models: AiModelInfo[]
@@ -60,6 +61,7 @@ export interface AiConnectionStatus extends Omit<AiConnection, 'baseUrl' | 'mode
     envKey?: boolean
     savedKey?: boolean
     savedKeyUnreadable?: boolean
+    savedKeyUnchecked?: boolean
   }
     models: AiModelInfo[]
 }
@@ -145,6 +147,7 @@ export interface AiChatRequest {
   maxTokens?: number
     baseUrl?: string
     origin?: 'ui' | 'channel' | 'harness'
+    operation?: string
     conversationId?: string
 }
 

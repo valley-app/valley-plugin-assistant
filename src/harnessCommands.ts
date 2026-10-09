@@ -1,3 +1,4 @@
+import { commandRegistrar, assistantResults } from './commandResults'
 import type { ValleyPluginApi } from './api'
 import type { HarnessPackageSnapshot, HarnessPackageStatus, HarnessRun, HarnessTarget } from './harnessTypes'
 
@@ -10,8 +11,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
   const string = { type: 'string', minLength: 1 }
   const inputSchema = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', properties, required, additionalProperties: false })
   const invokeAiData = <T>(method: string, payload: unknown = {}): Promise<T> => api.backend.call<T>(`ai.${method}`, payload)
-  offs.push(api.commands.register({
-    id: 'harness-list',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-list', outputSchema: assistantResults['harness-list'],
     labelKey: 'assistant.harness.command.list',
     label: 'Harnesses: list',
     paletteSafe: false,
@@ -24,8 +25,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     }
   }))
 
-  offs.push(api.commands.register({
-    id: 'harness-inspect',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-inspect', outputSchema: assistantResults['harness-inspect'],
     labelKey: 'assistant.harness.command.inspect',
     label: 'Harnesses: inspect package and recent runs',
     paletteSafe: false,
@@ -43,8 +44,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     }
   }))
 
-  offs.push(api.commands.register({
-    id: 'harness-reload',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-reload', outputSchema: assistantResults['harness-reload'],
     labelKey: 'assistant.harness.command.reload',
     label: 'Harnesses: reload',
     paletteSafe: false,
@@ -54,8 +55,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     formatCli: (value) => t('assistant.harness.reloaded', { count: (value as { harnesses: HarnessPackageStatus[] }).harnesses.filter((item) => item.ready).length })
   }))
 
-  offs.push(api.commands.register({
-    id: 'harness-run',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-run', outputSchema: assistantResults['harness-run'],
     labelKey: 'assistant.harness.command.run',
     label: 'Harnesses: run',
     paletteSafe: false,
@@ -79,8 +80,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     formatCli: (value) => t('assistant.harness.started', { id: (value as { run: HarnessRun }).run.id })
   }))
 
-  offs.push(api.commands.register({
-    id: 'harness-cancel',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-cancel', outputSchema: assistantResults['harness-cancel'],
     labelKey: 'assistant.harness.command.cancel',
     label: 'Harnesses: cancel run',
     paletteSafe: false,
@@ -94,8 +95,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     }
   }))
 
-  offs.push(api.commands.register({
-    id: 'harness-history',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-history', outputSchema: assistantResults['harness-history'],
     labelKey: 'assistant.harness.command.history',
     label: 'Harnesses: run history',
     paletteSafe: false,
@@ -110,8 +111,8 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     formatCli: (value) => (value as { runs: HarnessRun[] }).runs.map((run) => `${run.id}\t${run.status}\t${new Date(run.startedAt).toISOString()}`).join('\n') || t('assistant.harness.noRuns')
   }))
 
-  offs.push(api.commands.register({
-    id: 'harness-clear-cache',
+  offs.push(commandRegistrar(api)({
+    id: 'harness-clear-cache', outputSchema: assistantResults['harness-clear-cache'],
     labelKey: 'assistant.harness.command.clear-cache',
     label: 'Harnesses: clear cache',
     paletteSafe: false,

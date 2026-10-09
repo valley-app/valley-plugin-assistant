@@ -1,3 +1,4 @@
+import { createWorkflowAdapter } from './workflow'
 import * as fs from './filesystem'
 import { effectiveSettings, readSettingsDocument, saveSettings, settingsSchema } from './configuration/settings'
 import { AssistantRuntime } from './engine/service'
@@ -22,7 +23,12 @@ import { releaseFileAccess } from './filesystem'
 import { channelManager } from './channels/manager'
 import { cancelAllHarnessRuns } from './harness/runner'
 import { relayAiStream, cancelAllRuns } from './engine'
+import { transportValue } from './transport'
+import { admitTurn } from './engine/responsiveness'
+import type { TurnSubmission } from '../contracts/execution'
+import type { OutboundDelivery } from './channels/deliveryQueue'
 export function register(api: PluginBackendApi): () => Promise<void> {
+  const workflow = createWorkflowAdapter(api)
   initBackend(api)
   const runtime = new AssistantRuntime(api)
   channelManager.bindRuntime({ repository: runtime.repository, onInbound: (id, message) => runtime.inbound(id, { ...message, channelId: id, ts: message.receivedAt ?? Date.now() }).then(() => {}), onLifecycle: async (id, event) => { if (event.type === 'receipt' && event.state) await runtime.channels.deliveries.providerReceipt(id, event.providerMessageId, event.state, event.error) }, onAction: async (_id, action, actor) => { if (action.kind === 'plan.approve') await runtime.approve(action.conversationId, action, `${actor.channelId}:${actor.chatRef}:${actor.senderId}`); else await runtime.coordinator.change(action.conversationId, async thread => { if (thread.plan?.id !== action.planId || thread.plan.revision !== action.revision) throw new Error('Plan changed'); thread.plan.status = 'changes'; thread.mode = 'plan'; return {} }) } })
@@ -35,13 +41,18 @@ export function register(api: PluginBackendApi): () => Promise<void> {
   const accepted = <T>(operation: () => Promise<T>): Promise<T> => {
     if (!active) return Promise.reject(new Error('Assistant backend is closing'))
     if (pending.size >= 64) return Promise.reject(new Error('Too many Assistant requests are pending'))
-    const task = ready.then(() => { if (backendApi() !== api) throw new Error('Assistant backend changed before request'); return operation() })
+    const task = ready.then(() => { if (backendApi() !== api) throw new Error('Assistant backend changed before request'); return operation() }).then(transportValue)
     pending.add(task)
     void task.then(() => pending.delete(task), () => pending.delete(task))
     return task
   }
   const startup = ready.then(() => { if (active) return channelManager.ensureStarted(VAULT_ROOT).then(() => channelManager.recoverInbound()) }).catch((error) => { if (active) api.rpc.emit('backendError', String(error)) })
   const sessionInput = z.object({ conversationId: z.string().min(1).max(256) })
+  const admitSubmission = (input: TurnSubmission, context: PluginBackendOperationContext, owner: PluginBackendOperationContext['api']) => admitTurn(admission => accepted(async () => {
+    admission.check()
+    const target = await admission.step('binding the originating application window', () => context.api.agent.captureTarget())
+    return runtime.submit({ ...input, ...(target ? { targetReference: target.reference } : {}) }, owner, admission)
+  }), context.cancellation)
   const commandHandlers: Record<string, (input: unknown, owner: PluginBackendOperationContext['api'], context?: PluginBackendOperationContext) => Promise<unknown>> = {
     'command.settings.read': (_input, owner) => readSettingsDocument(VAULT_ROOT, owner),
     'command.settings.patch': async (input, owner) => {
@@ -53,7 +64,7 @@ export function register(api: PluginBackendApi): () => Promise<void> {
       }
     },
     'command.session.snapshot': async input => runtime.coordinator.snapshot(sessionInput.strict().parse(input).conversationId) ?? null,
-    'command.session.submit': async (input, owner, context) => { const value = z.object({ id: z.string().min(1).max(512), conversationId: z.string().min(1).max(256), text: z.string().min(1).max(500000) }).strict().parse(input); await runtime.submit(value, owner); return runtime.coordinator.waitForTurn(value.conversationId, value.id, context?.cancellation) },
+    'command.session.submit': async (input, owner, context) => { if (!context) throw new Error('Authenticated submission is required'); const value = z.object({ id: z.string().min(1).max(512), conversationId: z.string().min(1).max(256), text: z.string().min(1).max(500000) }).strict().parse(input); await admitSubmission(value, context, owner); return runtime.coordinator.waitForTurn(value.conversationId, value.id, context.cancellation) },
     'command.session.stop': async (input, owner) => { await runtime.coordinator.stop(sessionInput.strict().parse(input).conversationId, owner); return null },
     'command.session.resume': async (input, owner, context) => { const id = sessionInput.strict().parse(input).conversationId; await runtime.coordinator.resume(id, owner); await runtime.coordinator.waitForTurn(id, undefined, context?.cancellation); return null },
     'command.session.queue': async (input, owner, context) => { const value = sessionInput.extend({ turnId: z.string().min(1).max(256), patch: z.object({ text: z.string().max(500000).optional(), editing: z.boolean().optional(), index: z.number().int().nonnegative().optional(), remove: z.boolean().optional() }).strict() }).strict().parse(input); await runtime.coordinator.edit(value.conversationId, value.turnId, value.patch, owner); if (!value.patch.remove && !runtime.coordinator.snapshot(value.conversationId)?.queue.find(turn => turn.id === value.turnId)?.editing) await runtime.coordinator.waitForTurn(value.conversationId, value.turnId, context?.cancellation); return null },
@@ -74,19 +85,35 @@ export function register(api: PluginBackendApi): () => Promise<void> {
     return null
   }
   const offSessions = [
-    ...Object.keys(configurationDomainSchemas).map(method => api.rpc.handleOperation(`command.${method}`, (input, context) => accepted(async () => {
+    workflow.local('workflow.telegram.send', (input, context) => accepted(async () => {
+      const value = z.object({ conversationId: z.string().min(1).max(256), text: z.string().trim().min(1).max(500000) }).strict().parse(input)
+      context.cancellation.throwIfAborted()
+      const thread = await readChat(VAULT_ROOT, value.conversationId, context.api)
+      if (thread?.source !== 'telegram') throw Object.assign(new Error('Choose an existing Telegram conversation'), { code: 'PROVIDER_INVALID_INPUT', fatal: true, transient: false, retryable: false })
+      const id = context.id, deliveryId = `manual:${value.conversationId}:${id}`
+      try { await runtime.sendAsChannel({ ...value, id }, context.api) }
+      catch (error) {
+        const delivery = await runtime.repository.get<OutboundDelivery>('outbound_deliveries', deliveryId)
+        const unknown = delivery?.state === 'UNKNOWN' || delivery?.state === 'DISPATCHING'
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), { code: 'CHANNEL_DELIVERY_FAILED', fatal: true, transient: false, retryable: false, ...(unknown ? { outcome: 'unknown', outcomeUnknown: true } : {}) })
+      }
+      const delivery = await runtime.repository.get<OutboundDelivery>('outbound_deliveries', deliveryId)
+      if (!delivery || !['ACCEPTED', 'DELIVERED', 'READ'].includes(delivery.state) || !delivery.providerMessageIds.length) throw Object.assign(new Error('Telegram has no confirmed provider receipt'), { code: 'CHANNEL_OUTCOME_UNKNOWN', outcome: 'unknown', outcomeUnknown: true, fatal: true, transient: false, retryable: false })
+      return { deliveryId: delivery.id, conversationId: value.conversationId, state: delivery.state, providerMessageIds: delivery.providerMessageIds }
+    })),
+    ...Object.keys(configurationDomainSchemas).map(method => workflow.operation(`command.${method}`, (input, context) => accepted(async () => {
       context.cancellation.throwIfAborted()
       return configurationDomainHandlers(VAULT_ROOT, context.api)[method as keyof typeof configurationDomainSchemas](input)
     }))),
-    ...['configuration.status', 'configuration.note', 'configuration.note.set', 'configuration.link', 'configuration.speech', 'configuration.speech.set', 'configuration.conversation', 'configuration.conversation.set', 'configuration.project', 'configuration.project.set'].map(method => api.rpc.handleOperation(`command.${method}`, (input, context) => accepted(async () => {
+    ...['configuration.status', 'configuration.note', 'configuration.note.set', 'configuration.link', 'configuration.speech', 'configuration.speech.set', 'configuration.conversation', 'configuration.conversation.set', 'configuration.project', 'configuration.project.set'].map(method => workflow.operation(`command.${method}`, (input, context) => accepted(async () => {
       context.cancellation.throwIfAborted()
       return configurationHandlers(VAULT_ROOT, context.api)[method](input)
     }))),
-    ...Object.entries(commandHandlers).map(([method, handler]) => api.rpc.handleOperation(method, (input, context) => accepted(async () => { context.cancellation.throwIfAborted(); return handler(input, context.api, context) }))),
+    ...Object.entries(commandHandlers).map(([method, handler]) => workflow.operation(method, (input, context) => method === 'command.session.submit' ? handler(input, context.api, context).then(transportValue) : accepted(async () => { context.cancellation.throwIfAborted(); return handler(input, context.api, context) }))),
     ...Object.entries(configurationHandlers(VAULT_ROOT)).map(([method, handler]) => api.rpc.handle(method, input => accepted(() => handler(input)))),
     api.rpc.handle('session.channelSend', input => accepted(async () => runtime.sendAsChannel(sessionInput.extend({ id: z.string().uuid(), text: z.string().trim().min(1).max(500000) }).strict().parse(input), api))),
     api.rpc.handle('session.snapshot', input => accepted(async () => runtime.coordinator.snapshot(sessionInput.parse(input).conversationId))),
-    api.rpc.handle('session.submit', input => accepted(async () => { const value = z.object({ id: z.string().min(1).max(512), conversationId: z.string().min(1).max(256), text: z.string().max(500000), thread: chatThread.optional(), origin: z.literal('voice').optional(), attachments: z.array(z.object({ id: z.string().uuid(), path: z.string().min(1).max(4096), fileName: z.string().min(1).max(256), kind: z.enum(['image', 'pdf', 'audio', 'file']), mime: z.string().max(128).optional() }).strict()).max(32).optional() }).strict().parse(input); return runtime.submit(value, api) })),
+    workflow.operation('session.submit', async (input, context) => { const value = z.object({ id: z.string().min(1).max(512), conversationId: z.string().min(1).max(256), text: z.string().max(500000), thread: chatThread.optional(), origin: z.literal('voice').optional(), attachments: z.array(z.object({ id: z.string().uuid(), path: z.string().min(1).max(4096), fileName: z.string().min(1).max(256), kind: z.enum(['image', 'pdf', 'audio', 'file']), mime: z.string().max(128).optional() }).strict()).max(32).optional() }).strict().parse(input); return admitSubmission(value, context, api) }),
     api.rpc.handle('session.interruptVoice', input => accepted(async () => { const id = sessionInput.parse(input).conversationId; if (['INFERRING', 'PREPARING'].includes(runtime.coordinator.snapshot(id)?.state ?? '')) await runtime.coordinator.stop(id, api) })),
     api.rpc.handle('session.stop', input => accepted(() => runtime.coordinator.stop(sessionInput.parse(input).conversationId, api))),
     api.rpc.handle('session.resume', input => accepted(() => runtime.coordinator.resume(sessionInput.parse(input).conversationId, api))),
@@ -142,11 +169,11 @@ export function register(api: PluginBackendApi): () => Promise<void> {
     api.rpc.handle('harness.available', () => accepted(() => api.process.available())),
     api.rpc.handle('harness.steer', input => accepted(async () => steerRuntime(input))),
     api.rpc.handle('harness.respond', input => accepted(async () => respondToRuntime(input))),
-    api.rpc.handleOperation('harness.run', (input, context) => accepted(() => runNativeRuntime(input, context)))
+    workflow.operation('harness.run', (input, context) => accepted(() => runNativeRuntime(input, context)))
   ]
   const offProjectOperations = [
-    api.rpc.handleOperation('project.file', (input, context) => accepted(() => projectRequest('file', input, context.api, context.id))),
-    api.rpc.handleOperation('project.command', (input, context) => accepted(() => executeProjectCommand(input, context)))
+    workflow.operation('project.file', (input, context) => accepted(() => projectRequest('file', input, context.api, context.id))),
+    workflow.operation('project.command', (input, context) => accepted(() => executeProjectCommand(input, context)))
   ]
   const offProjects = api.rpc.handle('projects.request', input => accepted(async () => {
     const { method, payload } = z.object({ method: z.enum(['list', 'create', 'context', 'execution', 'update', 'addFolder', 'removeFolder', 'delete', 'file']), payload: z.unknown().optional() }).strict().parse(input)
@@ -174,6 +201,7 @@ export function register(api: PluginBackendApi): () => Promise<void> {
   return () => {
     if (disposal) return disposal
     active = false
+    workflow.dispose()
     offSessions.forEach(dispose => dispose())
     const sessions = runtime.close()
     closeBackend(api)

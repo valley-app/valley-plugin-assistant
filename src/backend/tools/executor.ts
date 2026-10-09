@@ -14,6 +14,7 @@ interface Execution {
 }
 const stable = (value: unknown): string => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(stable).join(',')}]` : `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`
 const failure = (code: string, message: string, outcomeUnknown = false): ToolResult => ({ success: false, error: { code, message: redactSecrets(message), recoverable: !outcomeUnknown, ...(outcomeUnknown ? { outcomeUnknown: true } : {}) } })
+const terminalCodes = new Set(['TARGET_REQUIRED', 'TARGET_UNAVAILABLE', 'RENDERER_UNAVAILABLE', 'RENDERER_LOST', 'RENDERER_TIMEOUT', 'OWNER_CHANGED', 'OWNER_UNAVAILABLE'])
 
 export class ToolExecutor {
   constructor(private registry: ToolRegistry, private repository: AssistantRepository) {}
@@ -39,6 +40,8 @@ export class ToolExecutor {
     const policy = await context.operation.api.policy.read()
     const decisions = targets.map(target => resolveGuard({ caller: 'agent', target }, policy, context.guardLayers ?? {}, policy.dangerousMode, Date.now()))
     let result: ToolResult | undefined
+    let settlement: Promise<ToolResult> | undefined
+    let interrupted = false
     if (decisions.some(decision => decision.decision === 'deny')) result = failure('GUARD_DENIED', decisions.find(decision => decision.decision === 'deny')!.reason)
     else if (decisions.some(decision => decision.decision === 'confirm')) {
       await context.state('AWAITING_APPROVAL')
@@ -54,26 +57,36 @@ export class ToolExecutor {
       entry.state = 'RUNNING'
       await persist()
       await context.state('EXECUTING_TOOLS')
-      let timedOut = false
       const controller = new AbortController()
-      const cancel = () => { if (tool.effect !== 'non-idempotent') controller.abort() }
+      let interrupt!: (result: ToolResult) => void
+      const interruption = new Promise<ToolResult>(resolve => { interrupt = resolve })
+      const stop = (code: string, message: string) => { interrupted = true; controller.abort(); interrupt(failure(code, message, tool.effect === 'non-idempotent')) }
+      const cancel = () => stop('INTERRUPTED', 'The operation was interrupted. Inspect any pending effect before retrying.')
       context.operation.cancellation.addEventListener('abort', cancel, { once: true })
       if (context.operation.cancellation.aborted) cancel()
-      let expire!: (error: Error) => void
-      const timeout = new Promise<never>((_resolve, reject) => { expire = reject })
-      const timer = setTimeout(() => { timedOut = true; controller.abort(); expire(new Error('Tool execution timed out')) }, Math.min(300000, Math.max(1, tool.timeoutMs)))
-      const running = tool.execute(parsed.data, { ...context, operation: { ...context.operation, cancellation: valleyCancellationOf(controller) } })
+      const timer = setTimeout(() => stop('TIMEOUT', 'Tool execution timed out. Inspect any pending effect before retrying.'), Math.min(300000, Math.max(1, tool.timeoutMs)))
+      const running = Promise.resolve().then(() => { context.operation.cancellation.throwIfAborted(); return tool.execute(parsed.data, { ...context, operation: { ...context.operation, cancellation: valleyCancellationOf(controller) } }) })
+      settlement = running.then(output => ({ success: true, value: tool.output.parse(output) }) as ToolResult).catch(error => {
+        const detail = error && typeof error === 'object' ? error as { code?: string; outcome?: string; recoverable?: boolean; execution?: { id: string; command: string; status: string; revision: number } } : {}
+        const result = failure(detail.code ?? 'EXECUTION_FAILED', String(error), tool.effect === 'non-idempotent' && detail.outcome !== 'not-applied')
+        if (!result.success && (detail.recoverable === false || terminalCodes.has(result.error.code))) result.error.recoverable = false
+        if (!result.success && detail.execution) {
+          const { id, command, status, revision } = detail.execution
+          result.error.execution = { id, command, status, revision }
+        }
+        return result
+      })
       try {
-        const output = tool.output.parse(await Promise.race([running, timeout]))
-        result = timedOut ? failure('TIMEOUT', 'The operation settled after its timeout. Inspect its result before retrying.', tool.effect === 'non-idempotent') : { success: true, value: output }
-      } catch (error) {
-        result = failure(timedOut ? 'TIMEOUT' : context.operation.cancellation.aborted ? 'INTERRUPTED' : 'EXECUTION_FAILED', String(error), tool.effect === 'non-idempotent')
-        if (tool.effect === 'non-idempotent') await running.catch(() => {})
+        result = await Promise.race([settlement, interruption])
       } finally { clearTimeout(timer); context.operation.cancellation.removeEventListener('abort', cancel) }
     }
     entry.result = result
     entry.state = !result.success && result.error.outcomeUnknown ? 'UNKNOWN' : 'COMPLETED'
     await persist()
+    if (interrupted && settlement && entry.state === 'UNKNOWN') void settlement.then(async settled => {
+      entry.result = settled; entry.state = !settled.success && settled.error.outcomeUnknown ? 'UNKNOWN' : 'COMPLETED'
+      await persist()
+    }).catch(() => {})
     return result
   }
 }

@@ -6,7 +6,7 @@ import type { PluginBackendOperationContext, PluginBackendApi } from '@valley/pl
 import { initBackend } from '../src/backend/runtime'
 import { releaseFileAccess, readFile, writeFile, storageLocation } from '../src/backend/filesystem'
 import { readChat, saveChat, appendMemory, readMemory } from '../src/backend/store'
-import { getCredential, channelKey, setSecret } from '../src/backend/secrets'
+import { getCredential, channelKey, setSecret, hasSecret } from '../src/backend/secrets'
 import { register } from '../src/backend/index'
 import { AssistantRuntime } from '../src/backend/engine/service'
 import type { CoordinatorPorts } from '../src/backend/engine/coordinator'
@@ -17,6 +17,8 @@ import { importAttachment, discardAttachment, resumeAttachmentCleanup, importTra
 import { deleteChat, renameChat, saveGuardOverrides, listChats, clearChat, rebuildChatSearch } from '../src/backend/threads'
 import { projectRequest, resumeProjectCleanup, executionContext, executionFile } from '../src/backend/projects'
 import { datasetFixture } from './backendDatasetFixture'
+import { encodePluginBackendOperationValue, decodePluginBackendOperationValue } from '@valley/plugin-sdk/pluginBackendOperations'
+import { transportValue } from '../src/backend/transport'
 const files = new Map<string, Uint8Array>()
 const grants = new Map<string, string>()
 const revisions = new Map<string, { content: string | null; revision: number }>()
@@ -33,9 +35,10 @@ let writing: Uint8Array[] = []
 let readOffset = 0
 const encoder = new TextEncoder(), decoder = new TextDecoder()
 const locate = (location: { handle: string; path: string }) => `${grants.get(location.handle)}/${location.path}`.replace(/\/$/, '')
-const credentials = { state: vi.fn<PluginCredentialApi['state']>(async () => 'ok'), handle: vi.fn<PluginCredentialApi['handle']>(async () => 'opaque-handle'), set: vi.fn<PluginCredentialApi['set']>(), delete: vi.fn<PluginCredentialApi['delete']>() }
+const credentials = { presence: vi.fn<PluginCredentialApi['presence']>(async () => 'stored'), state: vi.fn<PluginCredentialApi['state']>(async () => 'ok'), handle: vi.fn<PluginCredentialApi['handle']>(async () => 'opaque-handle'), set: vi.fn<PluginCredentialApi['set']>(), delete: vi.fn<PluginCredentialApi['delete']>() }
 const rpc = { handleOperation: vi.fn<PluginBackendApi['rpc']['handleOperation']>(() => () => {}), handle: vi.fn<PluginBackendApi['rpc']['handle']>(() => () => {}), emit: vi.fn() }
-const api: { process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: Pick<PluginBackendApi['settings'], 'get'>; data: PluginBackendApi['data']; ai: Pick<PluginBackendApi['ai'], 'onStream' | 'cancel' | 'connections' | 'models'>; policy: Pick<PluginBackendApi['policy'], 'read' | 'checkFile'>; rpc: typeof rpc; storage: Pick<PluginBackendApi['storage'], 'readDocument'|'writeDocument'|'writeDocuments'|'open'|'close'|'stat'|'readBytes'|'write'|'writeBytes'|'mkdir'|'move'|'remove'|'list'>; credentials: typeof credentials; sealed: Pick<PluginBackendApi['sealed'], 'openRead'|'readChunk'|'beginWrite'|'writeChunk'|'commitWrite'|'close'> } = {
+const api: { agent: Pick<PluginBackendApi['agent'], 'captureTarget'>; process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: Pick<PluginBackendApi['settings'], 'get'>; data: PluginBackendApi['data']; ai: Pick<PluginBackendApi['ai'], 'onStream' | 'cancel' | 'connections' | 'models'>; policy: Pick<PluginBackendApi['policy'], 'read' | 'checkFile'>; rpc: typeof rpc; storage: Pick<PluginBackendApi['storage'], 'readDocument'|'writeDocument'|'writeDocuments'|'open'|'close'|'stat'|'readBytes'|'writeBytes'|'write'|'mkdir'|'move'|'remove'|'list'>; credentials: typeof credentials; sealed: Pick<PluginBackendApi['sealed'], 'openRead'|'readChunk'|'beginWrite'|'writeChunk'|'commitWrite'|'close'> } = {
+  agent: { captureTarget: vi.fn(async () => null) },
   process: { shutdown: async () => {} }, settings: { get: () => ({}) }, data: datasetFixture(), ai: { onStream: () => () => {}, cancel: async () => true, connections: async () => [], models: async () => [] },
   policy: { checkFile: async () => {}, read: async () => ({ defaultWrite: { decision: 'confirm' }, tools: {}, commands: {}, files: { visitMode: 'allow-all-except-blocked', defaultRead: { decision: 'allow' }, defaultWrite: { decision: 'confirm' }, allowedToVisit: ['**'], allowedToWrite: [], blocked: [], readOverrides: {}, writeOverrides: {} }, dangerousMode: { enabled: false, scope: 'off' }, pluginPresets: {} }) },
   rpc,
@@ -74,6 +77,91 @@ const api: { process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: P
 beforeEach(() => { files.clear(); grants.clear(); revisions.clear(); ledger = null; api.data = datasetFixture(); vi.clearAllMocks(); initBackend(api as unknown as PluginBackendApi) })
 afterEach(async () => { await releaseFileAccess() })
 describe('Assistant package persistence', () => {
+  it('times out while backend initialization is stalled and fences the late scoped submission', async () => {
+    vi.useFakeTimers()
+    let release!: () => void
+    const restore = vi.spyOn(AssistantRuntime.prototype, 'restore').mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve }))
+    const submit = vi.spyOn(AssistantRuntime.prototype, 'submit')
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const handler = rpc.handleOperation.mock.calls.find(([method]) => method === 'session.submit')![1]
+      const result = Promise.resolve(handler({ id: 'initializing', conversationId: 'startup-chat', text: 'Create fern.md', thread: { id: 'startup-chat', title: 'Fern', createdAt: 1, updatedAt: 1, messages: [] } }, operation()))
+      const failed = expect(result).rejects.toThrow('initializing the conversation for 10 seconds')
+      await vi.advanceTimersByTimeAsync(10000); await failed
+      expect(submit).not.toHaveBeenCalled()
+      release(); await vi.advanceTimersByTimeAsync(0)
+      expect(submit).not.toHaveBeenCalled()
+      expect(api.agent.captureTarget).not.toHaveBeenCalled()
+    } finally { release?.(); await dispose(); restore.mockRestore(); submit.mockRestore(); vi.useRealTimers() }
+  })
+
+  it('captures the authenticated submission target before returning admission and runs with the durable backend owner', async () => {
+    const target = crypto.randomUUID(), captureTarget = vi.fn(async () => ({ reference: target }))
+    const owner = { ...api, agent: { captureTarget } } as unknown as PluginBackendOperationContext['api']
+    let finish!: () => void
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, turn, controls) => {
+      expect(turn?.targetReference).toBe(target)
+      expect(controls.api).toBe(api)
+      await new Promise<void>(resolve => { finish = resolve })
+      await controls.message({ role: 'assistant', content: 'Opened.' })
+    })
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      expect(rpc.handle.mock.calls.some(([method]) => method === 'session.submit')).toBe(false)
+      const handler = rpc.handleOperation.mock.calls.find(([method]) => method === 'session.submit')![1]
+      const input = { id: 'ui-turn', conversationId: 'ui-chat', text: 'Open the calendar app', thread: { id: 'ui-chat', title: 'Calendar', createdAt: 1, updatedAt: 1, messages: [] } }
+      await expect(handler({ ...input, targetReference: 'forged' }, operation(owner))).rejects.toThrow()
+      expect(captureTarget).not.toHaveBeenCalled()
+      const session = await handler(input, operation(owner))
+      expect(encodePluginBackendOperationValue(session)).toBeTypeOf('string')
+      expect(captureTarget).toHaveBeenCalledOnce()
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+      finish()
+    } finally { finish?.(); await dispose(); run.mockRestore() }
+  })
+
+  it('delivers queued, streaming and terminal sessions plus saved chats through the actual host encoder', async () => {
+    const wire = (value: unknown) => decodePluginBackendOperationValue(encodePluginBackendOperationValue(value))
+    const id = 'wire-session'
+    await saveChat('/vault', { id, title: 'Wire session', createdAt: 1, updatedAt: 1, messages: [], profileId: undefined })
+    const observed: unknown[] = []
+    rpc.emit.mockImplementation((name, value) => { if (name === 'session.changed') observed.push(wire(value)) })
+    let finish!: () => void
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, _turn, controls) => {
+      await controls.state('INFERRING')
+      await controls.stream('Note created')
+      await new Promise<void>(resolve => { finish = resolve })
+      await controls.message({ role: 'assistant', content: 'Note created.', toolCalls: undefined })
+    })
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const command = (name: string) => rpc.handleOperation.mock.calls.find(([method]) => method === name)![1]
+      const read = (name: string) => rpc.handle.mock.calls.find(([method]) => method === name)![1]
+      const result = Promise.resolve(command('command.session.submit')({ id: 'wire-turn', conversationId: id, text: 'Create one note' }, operation()))
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+      expect(wire(await command('command.session.snapshot')({ conversationId: id }, operation()))).toMatchObject({ state: 'INFERRING', streamingText: 'Note created' })
+      expect(wire(await read('session.snapshot')({ conversationId: id }))).toMatchObject({ state: 'INFERRING' })
+      finish()
+      expect(wire(await result)).toMatchObject({ state: 'IDLE', streamingText: '', thread: { messages: [{ content: 'Note created.' }] } })
+      expect(observed.at(-1)).toMatchObject({ session: { state: 'IDLE' }, event: { type: 'finished' } })
+      expect(wire(await command('command.readChat')({ id }, operation()))).toMatchObject({ thread: { messages: [{ content: 'Note created.' }] } })
+      expect(wire(await read('ai.readChat')({ id }))).toMatchObject({ thread: { messages: [{ content: 'Note created.' }] } })
+      expect(wire(await readChat('/vault', id))).toMatchObject({ id })
+    } finally { finish?.(); await dispose(); run.mockRestore(); rpc.emit.mockReset() }
+  })
+
+  it('omits optional object fields without coercing invalid transport values or changing saved values', () => {
+    const value = { absent: undefined, nested: { absent: undefined, zero: 0, empty: '', no: false, nil: null }, array: [{ optional: undefined, text: 'Fern' }] }
+    const encoded = encodePluginBackendOperationValue(transportValue(value))
+    expect(decodePluginBackendOperationValue(encoded)).toEqual({ nested: { zero: 0, empty: '', no: false, nil: null }, array: [{ text: 'Fern' }] })
+    expect(Object.hasOwn(value, 'absent')).toBe(true)
+    expect(transportValue(undefined)).toBeUndefined()
+    const cycle: Record<string, unknown> = {}; cycle.self = cycle
+    for (const invalid of [NaN, Infinity, 1n, () => {}, Symbol('invalid'), [undefined], new Array(1), new Date(), new Map(), cycle, Object.defineProperty({}, 'hidden', { value: 'value' }), { get value() { throw new Error('getter must not run') } }]) {
+      expect(() => transportValue(invalid)).toThrow(/Assistant response/)
+    }
+  })
+
   it('resolves external and home paths in ordinary Chat only with Full access', async () => {
     await saveChat('/vault', { id: 'native-chat', title: 'Code', createdAt: 1, updatedAt: 1, messages: [{ role: 'user', content: 'Create a fern study.' }] })
     const root = { id: crypto.randomUUID(), projectId: 'access-full', path: '/', name: 'full' }
@@ -211,6 +299,21 @@ describe('Assistant package persistence', () => {
     } finally { release?.(); await dispose() }
   })
 
+  it('refuses renaming or pinning a missing, unsafe or deleted conversation as not applied', async () => {
+    await saveChat('/vault', { id: 'removed-chat', title: 'Removed', createdAt: 1, updatedAt: 1, messages: [] })
+    await deleteChat('/vault', 'removed-chat')
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      await rpc.handle.mock.calls.find(([method]) => method === 'ai.listChats')![1]({})
+      const handler = (method: string) => rpc.handleOperation.mock.calls.find(([name]) => name === method)![1]
+      for (const [method, input] of [['command.renameChat', { title: 'Ghost' }], ['command.setChatPinned', { pinned: true }]] as const) {
+        for (const id of ['missing-chat', '..']) await expect(Promise.resolve(handler(method)({ id, ...input }, operation()))).rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND', outcome: 'not-applied', retryable: false })
+        await expect(Promise.resolve(handler(method)({ id: 'removed-chat', ...input }, operation()))).rejects.toMatchObject({ message: expect.stringContaining('deleted'), outcome: 'not-applied', retryable: false })
+      }
+      expect([...files.keys()].filter(file => file.includes('missing-chat') || file.includes('removed-chat'))).toEqual([])
+    } finally { await dispose() }
+  })
+
   it('keeps provider sends and endpoint credential rebinding on the scoped operation API', async () => {
     const handle = crypto.randomUUID()
     const credentials = { ...api.credentials, state: vi.fn(async () => 'ok'), handle: vi.fn(async () => handle) }
@@ -326,7 +429,12 @@ describe('Assistant package persistence', () => {
   it('keeps channel credentials in device-local broker storage and returns only opaque handles', async () => {
     const endpoint = { host: 'api.example.test', port: 443, security: 'tls' as const }
     const key = channelKey('custom')
+    expect(await hasSecret('/vault', key)).toBe(true)
+    expect(credentials.presence).toHaveBeenCalledWith(key, { file: 'credentials.json', valueField: 'value' })
+    expect(credentials.state).not.toHaveBeenCalled()
+    expect(credentials.handle).not.toHaveBeenCalled()
     expect(await getCredential('/vault', key, [endpoint])).toBe('opaque-handle')
+    expect(credentials.state).toHaveBeenCalledOnce()
     const source = credentials.handle.mock.calls[0][1]!
     expect(source.store).toEqual({ file: 'credentials.json', valueField: 'value' })
     expect(source.endpoints).toEqual([endpoint])
@@ -465,5 +573,5 @@ it('hides empty histories without deleting records and keeps queued or attachmen
   await rebuildChatSearch('/vault')
   expect((await listChats('/vault')).map(chat => chat.id)).toEqual(expect.arrayContaining(['queued-draft', 'attachment-chat']))
   expect((await listChats('/vault')).some(chat => chat.id === empty.id)).toBe(false)
-  expect(await readChat('/vault', empty.id)).toMatchObject(empty)
+  expect(await readChat('/vault', empty.id)).toMatchObject(JSON.parse(JSON.stringify(empty)))
 })

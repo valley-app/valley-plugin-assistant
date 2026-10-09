@@ -82,7 +82,7 @@ beforeEach(() => {
     ai: { connections: sharedConnections, models: discoveredModels, cancel: cancelDiscovery },
     settings: { get: () => ({}) },
     accounts: { list: async () => [] },
-    credentials: { state: async (key: string) => credentials.has(key) ? 'ok' : 'absent', set: async (key: string, value: string) => { if (value) credentials.add(key); else credentials.delete(key) }, delete: async (key: string) => { credentials.delete(key) }, handle: async (key: string) => credentials.has(key) ? `opaque:${key}` : null },
+    credentials: { presence: async (key: string) => credentials.has(key) ? 'stored' : 'absent', state: async (key: string) => credentials.has(key) ? 'ok' : 'absent', set: async (key: string, value: string) => { if (value) credentials.add(key); else credentials.delete(key) }, delete: async (key: string) => { credentials.delete(key) }, handle: async (key: string) => credentials.has(key) ? `opaque:${key}` : null },
     rpc: { emit: vi.fn() }
   } as unknown as PluginBackendApi)
 })

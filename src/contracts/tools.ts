@@ -5,7 +5,7 @@ import type { SessionState } from './execution'
 
 export type ToolEffect = 'read' | 'retryable' | 'non-idempotent'
 export type ToolGroup = 'general' | 'reading' | 'messaging' | 'chat' | 'telegram' | 'whatsapp'
-export type ToolResult<T = unknown> = { success: true; value: T } | { success: false; error: { code: string; message: string; recoverable: boolean; outcomeUnknown?: boolean } }
+export type ToolResult<T = unknown> = { success: true; value: T } | { success: false; error: { code: string; message: string; recoverable: boolean; outcomeUnknown?: boolean; execution?: { id: string; command: string; status: string; revision: number } } }
 export interface ToolExecutionContext {
   conversationId: string
   runId: string

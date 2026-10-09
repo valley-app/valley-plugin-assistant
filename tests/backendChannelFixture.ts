@@ -7,7 +7,7 @@ import { datasetFixture } from './backendDatasetFixture'
 const fixtureHooks = vi.hoisted(() => ({
   threads: new Map<string, AiChatThread>(), channels: [] as ChannelInfo[],
   infer: vi.fn(), dispatch: vi.fn(), ingest: vi.fn(), compile: vi.fn(), attachment: vi.fn(), importFile: vi.fn(), attachments: vi.fn(),
-  deleted: new Set<string>(), commands: [] as CustomCommand[], profiles: [] as AiPersonality[]
+  deleted: new Set<string>(), commands: [] as CustomCommand[], profiles: [] as AiPersonality[], settings: {} as Record<string, unknown>
 }))
 vi.mock('../src/backend/threads', () => ({
   readChat: async (_root: string, id: string) => structuredClone(fixtureHooks.threads.get(id) ?? null),
@@ -19,7 +19,7 @@ vi.mock('../src/backend/store', () => ({
   readConfig: async () => ({ routing: { auto: false, default: { provider: 'openai', model: 'test-model' }, rules: [] }, providers: [{ provider: 'openai', configured: true, models: [{ id: 'test-model', contextWindow: 32000 }] }], connections: [{ id: 'openai', provider: 'openai', configured: true, models: [{ id: 'test-model' }] }] }),
   readPersonality: async () => null, readMemory: async () => [], readCommands: async () => fixtureHooks.commands, listPersonalities: async () => fixtureHooks.profiles
 }))
-vi.mock('../src/backend/configuration/settings', () => ({ effectiveSettings: async () => ({ importMaxBytes: 32 * 1024 * 1024, attachmentParser: 'test-parser' }) }))
+vi.mock('../src/backend/configuration/settings', () => ({ effectiveSettings: async () => ({ importMaxBytes: 32 * 1024 * 1024, attachmentParser: 'test-parser', ...fixtureHooks.settings }) }))
 vi.mock('../src/backend/configuration/instructions', () => ({ compileInstructions: (...args: unknown[]) => fixtureHooks.compile(...args) }))
 vi.mock('../src/backend/projects', () => ({ executionContext: async () => ({ cwd: '/vault', home: '/test-home', root: { id: 'root', path: '/vault' }, roots: [{ id: 'root', path: '/vault' }] }), executionFile: (_access: unknown, rootId: string, path: string) => ({ rootId, path }) }))
 vi.mock('../src/backend/chatNaming', () => ({ scheduleChatNaming: vi.fn() }))
@@ -37,6 +37,7 @@ import { initBackend } from '../src/backend/runtime'
 const runtimes: AssistantRuntime[] = []
 beforeEach(() => {
   fixtureHooks.threads.clear(); fixtureHooks.deleted.clear(); fixtureHooks.commands = []; fixtureHooks.profiles = []
+  fixtureHooks.settings = {}
   fixtureHooks.channels = [
     { id: 'telegram', type: 'telegram', name: 'Field bot', displayName: 'Field bot', configured: true, running: true, allowFrom: ['123'] },
     { id: 'whatsapp-1', type: 'whatsapp', name: 'Fungi channel', displayName: 'Fungi channel', configured: true, running: true, allowFrom: ['15550100001'] }

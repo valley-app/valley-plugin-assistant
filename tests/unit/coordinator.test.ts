@@ -10,6 +10,42 @@ const submission = (conversationId: string, id = crypto.randomUUID()): TurnSubmi
 const until = async (test: () => boolean) => vi.waitFor(() => expect(test()).toBe(true))
 
 describe('durable session coordinator', () => {
+  it('retains cancelled admission identity after restart and does not resume an unadmitted turn', async () => {
+    const data = datasetFixture(), repository = new AssistantRepository(data), run = vi.fn<CoordinatorPorts['run']>(async () => {})
+    const ports = { publish: vi.fn(), project: async () => {}, run }
+    const first = new SessionCoordinator(repository, ports)
+    const input = { ...submission('pending-admission'), admissionPending: true }
+    await first.enqueue(input)
+    expect(run).not.toHaveBeenCalled()
+    await first.close()
+    const restored = new SessionCoordinator(repository, ports)
+    try {
+      await restored.restore()
+      expect(restored.snapshot(input.conversationId)).toMatchObject({ state: 'FAILED', queue: [], paused: true })
+      expect((await data.dataset('turn_queue').get({ id: input.id }))?.state).toBe('REMOVED')
+      await restored.enqueue(input)
+      expect(run).not.toHaveBeenCalled()
+    } finally { await restored.close() }
+  })
+  it('holds recovered admitted queue entries for review instead of draining them after a fresh message', async () => {
+    const repository = new AssistantRepository(datasetFixture()), run = vi.fn<CoordinatorPorts['run']>(async () => {})
+    const ports = { publish: vi.fn(), project: async () => {}, run }
+    const first = new SessionCoordinator(repository, ports), input = { ...submission('held-admission'), admissionPending: true }
+    await first.enqueue(input); await first.stop(input.conversationId)
+    await first.acceptAdmission(input.conversationId, input.id, { check: () => {}, step: (_stage, work) => work() })
+    await first.close()
+    const restored = new SessionCoordinator(repository, ports)
+    try {
+      await restored.restore()
+      expect(restored.snapshot(input.conversationId)?.queue[0]).toMatchObject({ id: input.id, editing: true, admissionPending: false })
+      const fresh = submission(input.conversationId)
+      await restored.enqueue(fresh); await restored.steer(input.conversationId, fresh.id)
+      await restored.waitForTurn(input.conversationId, fresh.id)
+      expect(run).toHaveBeenCalledOnce()
+      expect(run.mock.calls[0][1]?.id).toBe(fresh.id)
+      expect(restored.snapshot(input.conversationId)?.queue[0]?.id).toBe(input.id)
+    } finally { await restored.close() }
+  })
   it('streams separate conversations simultaneously and stops only the selected conversation', async () => {
     const controlsByChat = new Map<string, Parameters<CoordinatorPorts['run']>[2]>()
     let finishFern!: () => void
@@ -51,7 +87,8 @@ describe('durable session coordinator', () => {
       const fresh = submission('moss')
       await coordinator.enqueue(fresh)
       await coordinator.steer('moss', fresh.id)
-      expect(coordinator.snapshot('moss')).toMatchObject({ state: 'QUEUED', paused: false, error: null, currentTurn: undefined })
+      expect(coordinator.snapshot('moss')).toMatchObject({ state: 'QUEUED', paused: false, error: null })
+      expect(coordinator.snapshot('moss')?.currentTurn).toBeUndefined()
       expect(run).toHaveBeenCalledOnce()
       release()
       await until(() => coordinator.snapshot('moss')?.state === 'IDLE')

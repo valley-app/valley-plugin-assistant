@@ -79,3 +79,9 @@ The Conversation sidebar and composer offer Vault only and Full access. Vault on
 Global Content Search includes saved conversation titles and user/assistant messages. Select a result to reopen that conversation and continue chatting; searching does not start a model request. Settings → Search → Content Search controls inclusion. Tool output and system instructions are excluded. The plugin maintains a rebuildable `chat_search` dataset in its cache; JSONL chat histories remain the source of truth.
 
 Chat Settings shows the active DeepSeek harness, current new-chat defaults, composer preferences, and a file-manager shortcut to stored chats. Evaluation packages remain separate. Projects are simple sidebar folders; their gear opens the exact project under Settings → Assistant → Projects for shared instructions, working folders, and deletion.
+
+## Workflow integration
+
+The backend explicitly registers its supported blocks through `registerWorkflowContribution`. Workflow calls the owning operations with their original authentication, cancellation, grants, revisions, and receipts. The catalogue publishes Draft-07 parameter and port contracts; credential administration and approval bypasses are excluded. Workflow availability is configured separately in Workflow → Plugins. Existing account, connection, and profile settings remain owned by this plugin.
+
+Workflow output collections are explicit: `listChats` → `$.chats`, `readChat` → `$.thread.messages`, `readMemory` → `$.memory`. Selectors are relative to each execution item’s `json`. Session state contains queues, thread messages and attachments, so those snapshots have no collection selector. Telegram delivery IDs remain receipt metadata.

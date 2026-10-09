@@ -61,7 +61,7 @@ describe('backend channel interactions', () => {
     if (chatType === 'private') {
       expect(result).toContain('ACCEPTED')
       expect(channelFixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ chatType: 'private' }), expect.objectContaining({ type: 'keyboard' }), undefined, api)
-    } else { expect(result).toContain('verified private chat'); expect(channelFixture.dispatch).not.toHaveBeenCalled() }
+    } else { expect(result).toContain('verified private chat'); expect(JSON.parse(result)).toMatchObject({ success: false, error: { recoverable: true } }); expect(JSON.parse(result).error.outcomeUnknown).toBeUndefined(); expect(channelFixture.dispatch).not.toHaveBeenCalled() }
   })
 
   it('queues messages during a run and preserves shared history and each turn sender', async () => {

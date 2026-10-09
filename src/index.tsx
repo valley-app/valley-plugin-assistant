@@ -1,3 +1,4 @@
+import { commandRegistrar, assistantResults } from './commandResults'
 import { createAssistantApi, disposeAssistantConfiguration } from './api'
 import type { ValleyPluginApi as HostApi } from '@valley/plugin-sdk'
 /**
@@ -51,30 +52,30 @@ export function register(hostApi: HostApi): () => Promise<void> {
   api.registerView('assistant.sidebar', SidebarPage)
   api.registerView('assistant.settings', Settings)
 
-  const offOpen = api.commands.register({
-    id: 'open',
+  const offOpen = commandRegistrar(api)({
+    id: 'open', outputSchema: assistantResults['open'],
     label: 'Assistant: Open chat', labelKey: 'auto.61d90e3d9930',
     hotkey: 'Mod-Shift-a',
     sideEffect: 'read',
     run: () => {
       api.workspace.openMainTab()
-      return undefined
+      return null
     }
   })
-  const offNew = api.commands.register({
-    id: 'new-chat',
+  const offNew = commandRegistrar(api)({
+    id: 'new-chat', outputSchema: assistantResults['new-chat'],
     label: 'Assistant: New chat', labelKey: 'auto.2dacd6a705d1',
     sideEffect: 'read',
     run: () => {
       getStore(api).newChat()
       api.workspace.openMainTab()
-      return undefined
+      return null
     }
   })
 
   // Terminal: `valley assistant ask "…"` — a headless one-shot (no tools).
-  const offAsk = api.commands.register({
-    id: 'ask',
+  const offAsk = commandRegistrar(api)({
+    id: 'ask', outputSchema: assistantResults['ask'],
     label: 'Assistant: Ask a question (one-shot, no tools)', labelKey: 'auto.d17275e8a878',
     paletteSafe: false,
     sideEffect: 'read',

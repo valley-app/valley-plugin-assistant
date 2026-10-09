@@ -6,9 +6,49 @@ import { sessionBackendFixture } from './sessionBackendFixture'
 const fixtures: ReturnType<typeof sessionBackendFixture>[] = []
 function fixture() { const backend = sessionBackendFixture(); fixtures.push(backend); return backend }
 const until = async (condition: () => boolean) => vi.waitFor(() => expect(condition()).toBe(true))
-afterEach(async () => { for (const backend of fixtures.splice(0)) { await backend.cleanup(); await disposeStore(backend.api) } })
+afterEach(async () => { for (const backend of fixtures.splice(0)) { await backend.cleanup(); await disposeStore(backend.api) }; vi.useRealTimers() })
 
 describe('durable backend message queue projections', () => {
+  it.each(['timeout', 'stop'])('ends stalled preparation on %s and never sends the late instruction', async end => {
+    const backend = fixture(), store = getStore(backend.api), ready = backend.gate()
+    await store.whenReady
+    vi.useFakeTimers()
+    store.whenReady = ready.promise
+    const send = vi.spyOn(backend.api.backend, 'callOperation')
+    const pending = store.send('Create fern.md\nFern and moss')
+    expect(store.getSnapshot().activeBusy).toBe(true)
+    if (end === 'stop') store.stop()
+    else await vi.advanceTimersByTimeAsync(10000)
+    await pending
+    expect(store.getSnapshot().activeBusy).toBe(false)
+    expect(store.getSnapshot().error).toContain(end === 'stop' ? 'admission cancelled' : '10 seconds')
+    ready.resolve(); await vi.advanceTimersByTimeAsync(0)
+    expect(send).not.toHaveBeenCalled()
+    expect(backend.model).not.toHaveBeenCalled()
+    await store.send('Read fern.md')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(send).toHaveBeenCalledOnce()
+    expect(send.mock.calls[0][0]).toBe('session.submit')
+  })
+  it('scopes submission failures to their originating chat and clears them on fresh input', async () => {
+    const backend = fixture(), store = getStore(backend.api), gate = backend.gate()
+    await store.whenReady
+    const original = backend.api.backend.callOperation
+    backend.api.backend.callOperation = (async (method: string, input: unknown) => {
+      if (method === 'session.submit' && (input as { text?: string }).text === 'Read the first note') { await gate.promise; throw new Error('First submission failed') }
+      return original(method, input)
+    }) as typeof original
+    const first = store.getSnapshot().active!.id
+    const pending = store.send('Read the first note')
+    store.newChat(); const second = store.getSnapshot().active!.id
+    gate.resolve(); await pending
+    expect(store.getSnapshot()).toMatchObject({ active: { id: second }, error: null })
+    await store.openChat(first)
+    expect(store.getSnapshot().error).toBe('First submission failed')
+    await store.send('Read a fresh note')
+    await until(() => backend.coordinator.snapshot(first)?.state === 'IDLE')
+    expect(store.getSnapshot().error).toBeNull()
+  })
   it('keeps a failed background chat error out of the selected running chat', async () => {
     const backend = fixture(), store = getStore(backend.api), failure = backend.gate(), success = backend.gate()
     backend.model.mockImplementation(async (_session, turn) => {

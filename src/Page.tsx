@@ -14,7 +14,7 @@ import type { PermissionRequest } from '@valley/plugin-sdk/guard/types'
 import { assetUrlForRelPath } from '@valley/plugin-sdk/fileTypes'
 import { usePluginSetting, useAssistant, useChannels } from './hooks'
 import {
-  Chat, Model, Lightning, Reset, Steer, Queue, ShieldAlert, ReadBook, ArrowDown,
+  Chat, Model, Lightning, Reset, Steer, Queue, ReadBook, ArrowDown,
   Pencil,
   Plus,
   Check,
@@ -344,7 +344,6 @@ const ThinkingIndicator: FC<{ phase: 'thinking' | 'working' }> = ({ phase }) => 
   </div>
 )
 
-export type PermMode = 'vault' | 'full'
 function ComposerPopover({ anchor, label, role = 'dialog', onClose, children }: {
   anchor: HTMLElement
   label: string
@@ -381,40 +380,20 @@ function QueuedMessage({ item, onEdit, onRemove, onSteer, store }: { store: Retu
   </div>
 }
 
-export const PermissionControl: FC<{
-  active: PermMode
-  disabled?: boolean
-  onPick: (mode: PermMode) => void
-}> = ({ active, disabled, onPick }) => {
-  const [anchor, setAnchor] = React.useState<HTMLButtonElement | null>(null)
-  const options = [
-    { value: 'vault' as const, label: 'assistant.permissions.vault', description: 'assistant.permissions.vaultDescription', icon: <Hand /> },
-    { value: 'full' as const, label: 'assistant.permissions.full', description: 'assistant.permissions.fullDescription', icon: <ShieldAlert /> }
-  ]
-  return <div className="assistant-perm" onMouseDown={event => event.stopPropagation()}>
-    <button type="button" className={`assistant-hand-btn${anchor ? ' is-open' : ''}${active === 'full' ? ' is-danger' : ''}`}
-      title={uiText(options.find(option => option.value === active)!.label)} aria-label={uiText('auto.91dd0270b66c')}
-      aria-haspopup="menu" aria-expanded={Boolean(anchor)} disabled={disabled} onClick={event => setAnchor(anchor ? null : event.currentTarget)}>
-      {options.find(option => option.value === active)!.icon}<span className="assistant-permission-label">{uiText(`assistant.permissions.${active}`)}</span>
-    </button>
-    {anchor && <ComposerPopover anchor={anchor} label={uiText('auto.91dd0270b66c')} role="menu" onClose={() => setAnchor(null)}>
-      <p className="assistant-composer-menu-title">{uiText('assistant.permissions.heading')}</p>
-      <div className="assistant-permissions-list" onKeyDown={event => {
-        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-        event.preventDefault()
-        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'))
-        const current = buttons.indexOf(event.target as HTMLButtonElement)
-        const index = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
-        buttons[index]?.focus()
-      }}>
-        {options.map(option => <button key={option.value} type="button" role="menuitemradio" aria-checked={active === option.value}
-          autoFocus={active === option.value} className={`assistant-perm-item${option.value === 'full' ? ' is-danger' : ''}`}
-          onClick={() => { onPick(option.value); setAnchor(null); anchor.focus() }}>
-          <span className="assistant-perm-ico">{option.icon}</span><span className="assistant-perm-text"><span className="assistant-perm-label">{uiText(option.label)}</span><span className="assistant-perm-desc">{uiText(option.description)}</span></span>
-          {active === option.value && <Check className="assistant-perm-check" />}
-        </button>)}
-      </div>
-    </ComposerPopover>}
+export const PermissionControl: FC<{ disabled?: boolean; onChanged(): void }> = ({ disabled, onChanged }) => {
+  const wrapper = React.useRef<HTMLDivElement>(null)
+  const [iconOnly, setIconOnly] = React.useState(false)
+  React.useLayoutEffect(() => {
+    const page = wrapper.current?.closest('.assistant-page')
+    if (!page || typeof ResizeObserver === 'undefined') return
+    const update = (): void => setIconOnly(page.getBoundingClientRect().width <= 460)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(page)
+    return () => observer.disconnect()
+  }, [])
+  return <div className="assistant-perm" ref={wrapper} onMouseDown={event => event.stopPropagation()}>
+    <api.ui.AccessControl variant="compact" iconOnly={iconOnly} disabled={disabled} onChange={onChanged} />
   </div>
 }
 
@@ -630,10 +609,6 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
   const unavailableModel = Boolean(snap.active?.model && (!selectedConnection?.configured || !selectedModelInfo))
   const modelName = selectedModelInfo?.label || snap.active?.model?.model || uiText('auto.c614ba7c453c')
   const selectedModelLabel = unavailableModel ? `${modelName} · ${uiText('assistant.composer.modelUnavailable')}` : modelName
-  const permActive: PermMode = danger ? 'full' : 'vault'
-  const onPickMode = (mode: PermMode): void => {
-    void store.setAccessMode(mode).catch(() => {})
-  }
 
   const dragHandlers = {
     onDragEnter: (event: React.DragEvent<HTMLDivElement>) => {
@@ -821,7 +796,7 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
               >
                 <Plus className="" />
               </button>
-              <PermissionControl active={permActive} disabled={snap.activeBusy} onPick={onPickMode} />
+              <PermissionControl disabled={snap.activeBusy} onChanged={() => { void store.reloadConfig().catch(error => setAttachmentError(String(error))) }} />
               {snap.active?.mode === 'plan' && <span className="assistant-plan-mode" title={uiText('assistant.plan.description')}><ReadBook />{uiText('assistant.plan.label')}</span>}
               <input
                 ref={fileInputRef}

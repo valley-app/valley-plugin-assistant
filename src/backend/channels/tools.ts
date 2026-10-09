@@ -59,7 +59,10 @@ export function registerChannelTools(registry: ToolRegistry, bus: ChannelBus, op
     context.operation.cancellation.throwIfAborted()
     if (!options.destination || options.destination.conversationId !== context.conversationId) throw new Error('A trusted destination for this conversation is required')
     if (options.automaticReply && input.content.type === 'text') return { delivery: 'automatic', instruction: 'No message was sent by this tool. Return the requested text as your final answer; it will be delivered once. Do not add delivery status, IDs or a confirmation.' }
-    if (input.content.type !== 'text' && input.content.type !== 'attachment') validateContent(options.destination, input.content)
+    if (input.content.type !== 'text' && input.content.type !== 'attachment') {
+      try { validateContent(options.destination, input.content) }
+      catch (error) { throw Object.assign(error instanceof Error ? error : new Error(String(error)), { outcome: 'not-applied' }) }
+    }
     if (!options.authorizeExternal) throw new Error('Channel sends require the core command broker authorization')
     await options.authorizeExternal(context, { destination: options.destination, content: input.content })
     context.operation.cancellation.throwIfAborted()

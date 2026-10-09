@@ -5,6 +5,8 @@ import type { ContextUsage } from '../../contracts/context'
 import type { QueuedTurn, SessionEvent, SessionSnapshot, SessionState, TurnSubmission } from '../../contracts/execution'
 import { AssistantRepository, record } from '../persistence/repositories'
 import { assertTransition } from './stateMachine'
+import { transportValue } from '../transport'
+import type { TurnAdmission } from './responsiveness'
 
 export interface RunControls {
   api?: OwnerApi
@@ -35,6 +37,7 @@ export class SessionCoordinator {
   private capacityWaiters: Array<{ id: string; resume(): void }> = []
   private writes = new Map<string, Promise<unknown>>()
   private closing = false
+  private rejectedAdmissions = new Set<string>()
 
   constructor(private repository: AssistantRepository, private ports: CoordinatorPorts, private concurrency = 4) {
     if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('Invalid conversation concurrency')
@@ -45,16 +48,20 @@ export class SessionCoordinator {
       if (await this.repository.get('conversation_deletions', session.conversationId)) continue
       this.sessions.set(session.conversationId, session)
       this.committed.set(session.conversationId, structuredClone(session))
-      if (!['IDLE', 'AWAITING_QUESTION', 'AWAITING_APPROVAL', 'FAILED', 'INTERRUPTED'].includes(session.state)) {
+      for (const turn of [...session.queue]) if (turn.admissionPending) await this.rejectAdmission(turn, new Error('Message admission was interrupted before dispatch. Submit a new instruction.'))
+      const held = session.queue.filter(turn => turn.admissionPending === false)
+      for (const turn of held) turn.editing = true
+      const recovering = !['IDLE', 'AWAITING_QUESTION', 'AWAITING_APPROVAL', 'FAILED', 'INTERRUPTED'].includes(session.state)
+      if (recovering) {
         session.state = 'INTERRUPTED'; session.paused = true
         session.error = 'Execution was interrupted. Review pending work and choose Continue.'
-        await this.commit(session, 'recovered', {})
       }
+      if (recovering || held.length) await this.commit(session, 'recovered', {}, held.map(turn => ({ dataset: 'turn_queue', operation: 'upsert', values: record(turn.id, session.conversationId, 'PENDING', turn) })))
       await this.ports.project(session, true)
     }
   }
 
-  snapshot(id: string): SessionSnapshot | null { return structuredClone(this.sessions.get(id) ?? null) }
+  snapshot(id: string): SessionSnapshot | null { return transportValue(this.sessions.get(id) ?? null) }
 
   async initialize(thread: AiChatThread, api?: OwnerApi): Promise<SessionSnapshot> {
     return this.serial(thread.id, async () => {
@@ -110,12 +117,12 @@ export class SessionCoordinator {
     return task
   }
 
-  private async commit(session: SessionSnapshot, type: string, payload: unknown, effects: Parameters<AssistantRepository['commit']>[3] = [], api?: OwnerApi): Promise<void> {
+  private async commit(session: SessionSnapshot, type: string, payload: unknown, effects: Parameters<AssistantRepository['commit']>[3] = [], api?: OwnerApi, publish = true): Promise<SessionEvent> {
     try {
       const event = await this.scoped(api).commit(session, type, payload, effects)
       this.committed.set(session.conversationId, structuredClone(session))
-      this.ports.publish(structuredClone(session), event, api)
-      this.notify()
+      if (publish) { this.ports.publish(transportValue(session), transportValue(event), api); this.notify() }
+      return event
     } catch (error) {
       const previous = this.committed.get(session.conversationId)
       if (previous) {
@@ -142,7 +149,7 @@ export class SessionCoordinator {
         session = { conversationId: input.conversationId, revision: 0, state: 'IDLE', runId: null, streamingText: '', queue: [], paused: false, error: null, context: null, thread: structuredClone(input.thread) }
         this.sessions.set(input.conversationId, session)
       }
-      const turn: QueuedTurn = { inputFingerprint: input.inputFingerprint, questionId: input.questionId, callbackData: input.callbackData, channelActor: input.channelActor, origin: input.origin, id: input.id, conversationId: input.conversationId, text: input.text, attachments: input.attachments ?? [], createdAt: Date.now(), priority: 0, editing: false }
+      const turn: QueuedTurn = { admissionPending: input.admissionPending, targetReference: input.targetReference, inputFingerprint: input.inputFingerprint, questionId: input.questionId, callbackData: input.callbackData, channelActor: input.channelActor, origin: input.origin, id: input.id, conversationId: input.conversationId, text: input.text, attachments: input.attachments ?? [], createdAt: Date.now(), priority: 0, editing: false }
       session.queue.push(turn)
       if (session.state === 'IDLE') session.state = 'QUEUED'
       await this.commit(session, 'enqueued', turn, [{ dataset: 'conversation_deletions', operation: 'delete', key: { id: input.conversationId } }, { dataset: 'turn_queue', operation: 'insert', values: record(turn.id, turn.conversationId, 'PENDING', turn) }, ...turn.attachments.flatMap(attachment => attachment.id ? [{ dataset: 'attachment_refs', operation: 'upsert' as const, values: { attachmentId: attachment.id, chatId: input.conversationId } }] : []), ...effects], api)
@@ -150,6 +157,48 @@ export class SessionCoordinator {
       this.schedule()
       return structuredClone(session)
     })
+  }
+
+  async acceptAdmission(id: string, turnId: string, admission: TurnAdmission, api?: OwnerApi): Promise<SessionSnapshot> {
+    return this.serial(id, async () => {
+      admission.check()
+      const session = this.sessions.get(id)
+      if (!session) throw new Error('Conversation is unavailable')
+      const candidate = structuredClone(session), turn = candidate.queue.find(value => value.id === turnId)
+      if (!turn?.admissionPending) return structuredClone(session)
+      turn.admissionPending = false
+      const event = await this.commit(candidate, 'admission.accepted', { turnId }, [{ dataset: 'turn_queue', operation: 'upsert', values: record(turnId, id, 'PENDING', turn) }], api, false)
+      admission.check()
+      Object.assign(session, candidate)
+      this.ports.publish(transportValue(session), transportValue(event), api); this.notify()
+      this.schedule()
+      return structuredClone(session)
+    })
+  }
+
+  async rejectAdmission(input: TurnSubmission, error: unknown, api?: OwnerApi): Promise<void> {
+    const id = input.conversationId, turnId = input.id
+    this.rejectedAdmissions.add(turnId)
+    await this.serial(id, async () => {
+      const session = this.sessions.get(id), turn = session?.queue.find(value => value.id === turnId)
+      if (!session || !turn?.admissionPending) {
+        const known = await this.scoped(api).get<TurnSubmission>('turn_queue', turnId)
+        if (!known) await this.scoped(api).data.transaction([{ dataset: 'turn_queue', operation: 'insert', values: record(turnId, id, 'REMOVED', { ...input, admissionPending: true }) }])
+        else if (known.conversationId === id && known.admissionPending) await this.scoped(api).data.transaction([{ dataset: 'turn_queue', operation: 'upsert', values: record(turnId, id, 'REMOVED', known) }])
+        return
+      }
+      session.queue = session.queue.filter(value => value.id !== turnId)
+      if (!this.active.has(id) && !session.queue.length) { session.state = 'FAILED'; session.paused = true; session.error = String(error) }
+      await this.commit(session, 'admission.rejected', { turnId }, [{ dataset: 'turn_queue', operation: 'upsert', values: record(turnId, id, 'REMOVED', turn) }], api)
+      this.turnOwners.delete(turnId)
+      this.schedule()
+    }).catch(failure => {
+      const session = this.sessions.get(id), turn = session?.queue.find(value => value.id === turnId)
+      if (turn) { turn.admissionPending = true; turn.editing = true }
+      if (session && !this.active.has(id)) { session.state = 'FAILED'; session.paused = true; session.error = String(error) }
+      throw failure
+    })
+    this.rejectedAdmissions.delete(turnId)
   }
 
   async edit(id: string, turnId: string, patch: { text?: string; editing?: boolean; index?: number; remove?: boolean }, api?: OwnerApi): Promise<void> {
@@ -221,7 +270,7 @@ export class SessionCoordinator {
     }
     for (const session of this.sessions.values()) {
       if (occupied() >= this.concurrency) break
-      if (this.active.has(session.conversationId) || session.paused || session.state !== 'QUEUED' || session.queue[0]?.editing) continue
+      if (this.active.has(session.conversationId) || session.paused || session.state !== 'QUEUED' || session.queue[0]?.editing || session.queue[0]?.admissionPending || this.rejectedAdmissions.has(session.currentTurn?.id ?? session.queue[0]?.id ?? '')) continue
       const active = { controller: new AbortController(), steer: false, occupied: true, completed: false, task: Promise.resolve(), api: this.turnOwners.get(session.currentTurn?.id ?? session.queue[0]?.id ?? '') ?? this.continuationOwners.get(session.conversationId) }
       this.active.set(session.conversationId, active)
       active.task = this.execute(session, active)

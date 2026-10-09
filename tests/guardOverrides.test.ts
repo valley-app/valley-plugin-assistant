@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { GuardPolicy } from '@valley/plugin-sdk/guard/types'
@@ -7,20 +7,22 @@ import { ToolRegistry } from '../src/backend/tools/registry'
 import { ToolExecutor } from '../src/backend/tools/executor'
 import { AssistantRepository } from '../src/backend/persistence/repositories'
 import { datasetFixture } from './backendDatasetFixture'
-import type { ToolExecutionContext } from '../src/contracts/tools'
+import type { ToolEffect, ToolExecutionContext } from '../src/contracts/tools'
+import { commandResult } from '../src/backend/tools/commandResult'
 
-function fixture() {
+function fixture(effect: ToolEffect = 'retryable') {
   const policy: GuardPolicy = { defaultWrite: { decision: 'allow' }, tools: {}, commands: {}, files: { visitMode: 'allow-all-except-blocked', defaultRead: { decision: 'allow' }, defaultWrite: { decision: 'allow' }, allowedToVisit: ['**'], allowedToWrite: ['**'], blocked: [], readOverrides: {}, writeOverrides: {} }, dangerousMode: { enabled: false, scope: 'off' }, pluginPresets: {} }
   const execute = vi.fn(async () => 'saved'), approve = vi.fn(async () => true), state = vi.fn(async () => {})
   const cancellation = new AbortController()
   const context: ToolExecutionContext = { conversationId: 'chat', runId: 'run', planning: false, state, approve, operation: { cancellation: valleyCancellationOf(cancellation), api: { policy: { read: async () => policy } } } as unknown as PluginBackendOperationContext }
-  const registry = new ToolRegistry().register({ name: 'write_note', description: 'Write a note', group: 'general', parameters: z.object({ text: z.string() }), output: z.string(), requiredCapabilities: [], effect: 'retryable', timeoutMs: 1000,
+  const registry = new ToolRegistry().register({ name: 'write_note', description: 'Write a note', group: 'general', parameters: z.object({ text: z.string() }), output: z.string(), requiredCapabilities: [], effect, timeoutMs: 1000,
     guardTargets: () => [{ kind: 'tool', id: 'write_note', sideEffect: 'write' }, { kind: 'file', path: 'Notes/secret.md', sideEffect: 'write', fileOperation: 'write' }], execute })
   const repository = new AssistantRepository(datasetFixture())
   const executor = new ToolExecutor(registry, repository)
   const call = { id: 'write', name: 'write_note', arguments: { text: 'Note' } }
-  return { policy, context, cancellation, execute, approve, state, repository, executor, call }
+  return { policy, context, cancellation, execute, approve, state, repository, executor, call, registry }
 }
+afterEach(() => vi.useRealTimers())
 
 describe('backend Guard layers', () => {
   it('honors a persisted chat block passed into the execution context', async () => {
@@ -75,5 +77,49 @@ describe('backend Guard layers', () => {
     test.approve.mockImplementationOnce(async () => { test.cancellation.abort(); return true })
     await expect(test.executor.execute(test.call, test.context)).rejects.toThrow()
     expect(test.execute).not.toHaveBeenCalled()
+  })
+  it('persists an unknown timeout without joining a never-settling effect, including after restart', async () => {
+    vi.useFakeTimers()
+    const test = fixture('non-idempotent')
+    test.execute.mockImplementation(() => new Promise(() => {}))
+    const task = test.executor.execute(test.call, test.context)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(await task).toMatchObject({ success: false, error: { code: 'TIMEOUT', outcomeUnknown: true } })
+    expect(await test.repository.get('tool_executions', 'run:write')).toMatchObject({ state: 'UNKNOWN' })
+    const restored = new ToolExecutor(test.registry, test.repository)
+    expect(await restored.execute({ ...test.call, id: 'retry' }, { ...test.context, runId: 'new-run' })).toMatchObject({ success: false, error: { code: 'UNKNOWN_PREVIOUS_OUTCOME', outcomeUnknown: true } })
+    expect(test.execute).toHaveBeenCalledOnce()
+  })
+  it('returns promptly on Stop and reconciles late success without replaying or changing conversation state', async () => {
+    vi.useFakeTimers()
+    const test = fixture('non-idempotent')
+    let resolve!: (value: string) => void
+    test.execute.mockImplementation(() => new Promise(done => { resolve = done }))
+    const task = test.executor.execute(test.call, test.context)
+    await vi.advanceTimersByTimeAsync(0)
+    test.cancellation.abort()
+    expect(await task).toMatchObject({ success: false, error: { code: 'INTERRUPTED', outcomeUnknown: true } })
+    const states = test.state.mock.calls.length
+    resolve('saved once')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await test.repository.get('tool_executions', 'run:write')).toMatchObject({ state: 'COMPLETED', result: { success: true, value: 'saved once' } })
+    expect(test.state).toHaveBeenCalledTimes(states)
+    expect(await test.executor.execute(test.call, test.context)).toEqual({ success: true, value: 'saved once' })
+    expect(test.execute).toHaveBeenCalledOnce()
+  })
+  it('retains accepted host execution identity for a late uncertain result', async () => {
+    vi.useFakeTimers()
+    const test = fixture('non-idempotent')
+    let resolve!: () => void
+    test.execute.mockImplementation(async () => {
+      await new Promise<void>(done => { resolve = done })
+      return commandResult({ id: 'effect-1', command: 'note.write', revision: 3, status: 'uncertain' }) as string
+    })
+    const task = test.executor.execute(test.call, test.context)
+    await vi.advanceTimersByTimeAsync(1000)
+    await task
+    resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await test.repository.get('tool_executions', 'run:write')).toMatchObject({ state: 'UNKNOWN', result: { success: false, error: { outcomeUnknown: true, execution: { id: 'effect-1', command: 'note.write', status: 'uncertain', revision: 3 } } } })
   })
 })

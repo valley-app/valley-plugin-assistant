@@ -1,5 +1,8 @@
 # Assistant plugin
 
+- Readiness live chat verification uses English instructions in the root-coordinated managed `npm run dev` app with the current development DeepSeek connection. Do not switch providers, use Ollama, or launch a separate model/app for these checks; isolated synthetic unit fixtures remain allowed.
+- Preparation and inference stop after 10 seconds without substantive progress, including multiline or quoted-content requests. Only selected long-running tools use their declared budgets; heartbeats and diagnostic logs never extend a turn, and uncertain accepted effects must remain recorded instead of replaying.
+
 - `/plan` runs the complete planning conversation and ends with Refine plan / Yes, implement it. Keep planning active through revisions; only explicit approval of the current proposal may enable execution. Enforce the restriction in tool execution, including indirect command/provider dispatch.
 
 - Composer redesigns follow the user’s supplied reference: rounded input, visible permission label, compact model controls, and circular send/stop action, using Valley theme tokens. Keep implementation inside this plugin; wait for the other active UI tester to finish before using the managed Valley app.

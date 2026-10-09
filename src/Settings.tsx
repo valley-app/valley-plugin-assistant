@@ -144,7 +144,7 @@ export const ChatDetail: FC<{ summary: AiChatSummary; personalities: AiPersonali
     {!embedded && <CrumbBand backTo={backTo} current={summary.title} onBack={onBack} />}
     {error && <ErrorNotice error={error} />}
     {thread && <>
-      <Row title={uiText('assistant.permissions.heading')}><api.ui.settings.SelectField value={snap.dangerous?.enabled ? 'full' : 'vault'} ariaLabel={uiText('assistant.permissions.heading')} options={[{ value: 'vault', label: uiText('assistant.permissions.vault') }, { value: 'full', label: uiText('assistant.permissions.full') }]} onChange={value => { void action(() => store.setAccessMode(value === 'full' ? 'full' : 'vault')) }} /></Row>
+      <Row title={uiText('assistant.permissions.heading')}><api.ui.AccessControl variant="field" onChange={() => { void action(() => store.reloadConfig()) }} /></Row>
       <Row title={uiText('assistant.surface.title')}><TextField value={thread.title} ariaLabel={uiText('assistant.surface.title')} onChange={title => setThread({ ...thread, title })} onCommit={title => { void action(() => store.renameChat(thread.id, title)) }} /></Row>
       <Row title={uiText('assistant.surface.pinned')}><Toggle checked={thread.pinned === true} label={uiText('assistant.surface.pinned')} onChange={pinned => { setThread({ ...thread, pinned }); void action(() => store.setPinned(thread.id, pinned)) }} /></Row>
       <PropertySection title={words('behavior')}>

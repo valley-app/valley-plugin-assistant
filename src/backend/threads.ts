@@ -14,6 +14,7 @@ import { queuedWriteJson, runExclusive } from './fileQueue'
 import { readJson, readText } from './repositoryFiles'
 import { normalizeCommands } from './commandConfig'
 import { conversationConfiguration } from './configuration/conversations'
+import { transportValue } from './transport'
 
 // ── Chats (Meadow/Chorus folders) ────────────────────────────────────────────
 // Each chat is a folder: `settings.json` (meta), an append-only `thread.jsonl`
@@ -110,7 +111,7 @@ function metaOf(thread: AiChatThread): ChatMeta {
 }
 
 function threadFromMeta(meta: ChatMeta, messages: AiMessage[]): AiChatThread {
-  return {
+  return transportValue({
     mode: meta.mode,
     plan: meta.plan,
     pendingMessages: meta.pendingMessages,
@@ -139,7 +140,7 @@ function threadFromMeta(meta: ChatMeta, messages: AiMessage[]): AiChatThread {
     channelIdentity: meta.channelIdentity,
     commands: meta.commands?.length ? meta.commands : undefined,
     pinned: meta.pinned
-  }
+  })
 }
 
 /** Tolerant parse of one folder's `settings.json` → meta (null if absent/invalid). */
@@ -315,14 +316,21 @@ export async function saveChat(vaultRoot: string, thread: AiChatThread, api: Own
   }, api)
 }
 
+async function existingChat(vaultRoot: string, id: string, api: OwnerApi): Promise<{ dir: string; meta: ChatMeta }> {
+  try {
+    if (isSafeName(id)) {
+      await assertChatWritable(id, api)
+      const dir = await resolveChatDir(vaultRoot, id, api)
+      const meta = dir ? await readMeta(dir, api) : null
+      if (dir && meta) return { dir, meta }
+    }
+  } catch (error) { throw Object.assign(error instanceof Error ? error : new Error(String(error)), { outcome: 'not-applied', retryable: false }) }
+  throw Object.assign(new Error(t('assistant.surface.missing')), { code: 'CONVERSATION_NOT_FOUND', outcome: 'not-applied', retryable: false })
+}
+
 export async function renameChat(vaultRoot: string, id: string, title: string, api: OwnerApi = backendApi()): Promise<void> {
-  if (!isSafeName(id)) return
   return runExclusive(`chat:${id}`, async () => {
-  await assertChatWritable(id, api)
-  const dir = await resolveChatDir(vaultRoot, id, api)
-  if (!dir) return
-  const meta = await readMeta(dir, api)
-  if (!meta) return
+  const { dir, meta } = await existingChat(vaultRoot, id, api)
   await queuedWriteJson(settingsFile(dir), { ...meta, ...(meta.source ? { channelIdentity: meta.channelIdentity || meta.title } : {}), title, titleOrigin: 'manual', titleRevision: (meta.titleRevision ?? 0) + 1 }, api)
   await updateChatSearch(async () => { const thread = await readChat(vaultRoot, id, api); if (thread) await indexChat(thread, api) }, api)
   }, api)
@@ -344,13 +352,8 @@ export async function applyGeneratedTitle(vaultRoot: string, id: string, title: 
 }
 
 export async function setChatPinned(vaultRoot: string, id: string, pinned: boolean, api: OwnerApi = backendApi()): Promise<void> {
-  if (!isSafeName(id)) return
   return runExclusive(`chat:${id}`, async () => {
-  await assertChatWritable(id, api)
-  const dir = await resolveChatDir(vaultRoot, id, api)
-  if (!dir) return
-  const meta = await readMeta(dir, api)
-  if (!meta) return
+  const { dir, meta } = await existingChat(vaultRoot, id, api)
   await queuedWriteJson(settingsFile(dir), { ...meta, pinned: pinned || undefined }, api)
   }, api)
 }

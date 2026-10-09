@@ -2,6 +2,8 @@ import { createMockValleyApi as createHostMock } from '@valley/plugin-testkit'
 import type { AiStreamEvent, ChannelMessage, ChannelInfo, AiChatThread, AiMemoryEntry, AiPersonality, CustomCommand, AssistantConfig, AiUsageStats, AiModelInfo, AiProviderStatus, AiConnectionStatus } from '../src/types'
 import type { GuardOverrides, PendingApprovalRecord } from '@valley/plugin-sdk/guard/types'
 import type { ValleyPluginApi } from '../src/api'
+import type { ComponentProps } from 'react'
+import { vi } from 'vitest'
 export type MockOptions = Parameters<typeof createHostMock>[0] & { channels?: ChannelInfo[]; commands?: CustomCommand[]; aiConfig?: AssistantConfig; aiUsage?: AiUsageStats; aiModels?: Record<string, AiModelInfo[]>; aiProviders?: AiProviderStatus[]; aiConnections?: AiConnectionStatus[] }
 export function createMockValleyApi(options: MockOptions = {}) {
   const mock = createHostMock(options)
@@ -56,7 +58,9 @@ export function createMockValleyApi(options: MockOptions = {}) {
 
 
   const recordDriver = async (driver: string, method: string, payload: unknown): Promise<{ ok: true }> => { driverCalls.push({ driver, method, payload }); return { ok: true } }
+  const accessControl = vi.fn(({ variant, disabled, onChange }: ComponentProps<ValleyPluginApi['ui']['AccessControl']>) => mock.api.React.createElement('button', { type: 'button', disabled, 'data-host-access-control': variant, onClick: () => onChange?.('full') }, 'Host access control'))
   const api: ValleyPluginApi = { ...mock.api,
+      ui: { ...mock.api.ui, AccessControl: accessControl },
       backend: { ...mock.api.backend, call: (async (method: string, payload: unknown) => {
         if (method === 'session.snapshot') return null
         if (method === 'projects.request' && (payload as { method?: string })?.method === 'execution') {
@@ -326,7 +330,7 @@ export function createMockValleyApi(options: MockOptions = {}) {
         }
       }
   }
-  return { ...mock, api, chatThreads, chatMemory, pendingApprovals, guardOverrides,
+  return { ...mock, api, accessControl, chatThreads, chatMemory, pendingApprovals, guardOverrides,
     emitAiStream: (event: AiStreamEvent) => aiStreamListeners.forEach((listener) => listener(event)),
     emitChannelMessage: (event: ChannelMessage) => channelMessageListeners.forEach((listener) => listener(event))
   }

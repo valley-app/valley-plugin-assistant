@@ -21,6 +21,7 @@ export function respondToRuntime(value: unknown): void {
 export interface RuntimeHooks {
   event(payload: Record<string, unknown>): void
   tool(call: AiToolCall): Promise<string>
+  progress?(): void
   prepare?(request: AiChatRequest): Promise<AiChatRequest>
 }
 export async function runNativeRuntime(value: unknown, context: PluginBackendOperationContext, hooks?: RuntimeHooks): Promise<void> {
@@ -71,7 +72,7 @@ export async function runNativeRuntime(value: unknown, context: PluginBackendOpe
     if (message.role === 'assistant') message.continuation = continuations.get(assistantMessages++)
     emit({ type: 'message', message: { ...message, ts: message.ts ?? Date.now(), activityRunId: input.runId } })
   }
-  const model = async (params: Record<string, unknown>) => bridgeModel({ params, request, context, active: models, continuations, send, prepare: hooks?.prepare, onText: text => emit({ type: 'text', text }) })
+  const model = async (params: Record<string, unknown>) => bridgeModel({ params, request, context, active: models, continuations, send, prepare: hooks?.prepare, onProgress: hooks?.progress, onText: text => emit({ type: 'text', text }) })
   const toolWork = new Set<Promise<string>>()
   const tool = async (params: Record<string, unknown>): Promise<string> => {
     if (steering.has(input.runId)) return 'Skipped because the conversation was redirected.'
@@ -119,7 +120,9 @@ export async function runNativeRuntime(value: unknown, context: PluginBackendOpe
       if (params.status === 'idle' && running) done()
     } else if (frame.id !== undefined) await send({ id: frame.id, error: { code: -32601, message: 'This runtime capability is not exposed by Valley. Use the supplied tools.' } })
   }
+  let dispose = () => {}
   const stop = (error: Error) => {
+    dispose()
     failure ??= error
     for (const waiting of pending.values()) waiting.reject(error)
     pending.clear()
@@ -168,6 +171,7 @@ export async function runNativeRuntime(value: unknown, context: PluginBackendOpe
       if (buffer.length > 4 * 1024 * 1024) stop(new Error('Runtime protocol frame exceeds 4 MB'))
     }
   })
+  dispose = () => { off(); release(); clearTimeout(timer); context.cancellation.removeEventListener('abort', abort) }
   try {
     if (context.cancellation.aborted) throw new Error('Runtime cancelled')
     await assertChatWritable(input.chatId)
@@ -185,8 +189,7 @@ export async function runNativeRuntime(value: unknown, context: PluginBackendOpe
     throw error
   } finally {
     stopping = true
-    clearTimeout(timer)
-    context.cancellation.removeEventListener('abort', abort)
+    dispose()
     steering.delete(input.runId)
     for (const [id, reply] of replies) if (reply.runId === input.runId) { replies.delete(id); reply.resolve('Error: Runtime stopped') }
     await Promise.allSettled([...models.values()].map(id => api.ai.cancel(id)))
@@ -194,10 +197,8 @@ export async function runNativeRuntime(value: unknown, context: PluginBackendOpe
     await serial
     await Promise.allSettled([...tasks])
     await diagnostic
-    try {
-      const tail = stderr + stderrDecoder.decode()
-      if (tail) await persistDiagnostic(tail)
-    } finally { off(); release() }
+    const tail = stderr + stderrDecoder.decode()
+    if (tail) await persistDiagnostic(tail)
     await appendActivity(input.chatId, { ...activity, timestamp: Date.now(), outputRef, state: failure ? cancelled || context.cancellation.aborted ? 'cancelled' : 'failed' : 'completed', result: failure ? { error: String(failure) } : { completed: true } })
   }
 }

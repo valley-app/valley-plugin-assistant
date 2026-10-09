@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { beforeEach, expect, it, vi } from 'vitest'
 import { readHarnessPackage, reloadHarnessPackages, writeHarnessFile } from '../src/backend/harness/packages'
+import Ajv from 'ajv'
+import { assistantResults } from '../src/commandResults'
 
 const fixture = vi.hoisted(() => ({ settings: '{}', writes: [] as string[] }))
 vi.mock('../src/backend/filesystem', () => ({
@@ -29,6 +31,8 @@ it('loads built-in source from its package without seeding files', async () => {
   expect(await reloadHarnessPackages('/vault')).toMatchObject([{ id: 'fixture', ready: true }])
   const snapshot = await readHarnessPackage('/vault', 'fixture')
   expect(snapshot).toMatchObject({ readOnly: true, files: expect.arrayContaining([expect.objectContaining({ path: 'src/harness.ts' })]) })
+  const validator = new Ajv({ strict: false })
+  expect(validator.validate(assistantResults['harness-inspect'], { package: snapshot, runs: [] }), JSON.stringify(validator.errors)).toBe(true)
   expect(fixture.writes).toEqual([])
 })
 

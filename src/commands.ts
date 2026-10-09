@@ -1,7 +1,9 @@
+import { commandRegistrar, assistantResults } from './commandResults'
 import { uiText } from './localization'
 import { registerHarnessCommands } from './harnessCommands'
 import type { ValleyPluginApi } from './api'
 import type { AiChatThread, CustomCommand } from './types'
+import type { SessionSnapshot } from './contracts/execution'
 
 import { supportedEfforts } from './models'
 import { getStore } from './store'
@@ -96,38 +98,36 @@ export function registerAssistantCommands(api: ValleyPluginApi): () => void {
   const patchSchema = schema({ title: stringSchema, pinned: { type: 'boolean' }, model: { anyOf: [{ type: 'null' }, schema({ provider: stringSchema, model: stringSchema, connectionId: stringSchema }, ['provider', 'model'])] }, profileId: { type: ['string', 'null'] }, attachmentParser: { type: ['string', 'null'] }, commands: { type: 'array', items: schema({ name: stringSchema, prompt: stringSchema, description: { type: 'string' } }, ['name', 'prompt']) } })
   const offs = [
     registerHarnessCommands(api),
-    api.commands.register({
-      id: 'providers-reload',
+    commandRegistrar(api)({
+      id: 'providers-reload', outputSchema: assistantResults['providers-reload'],
       label: 'Providers: Reload', labelKey: 'assistant.command.reloadProviders',
-      sideEffect: 'write',
+      sideEffect: 'read',
       usage: 'providers reload',
-      run: async () => ({ value: await api.backend.call<{ providers: Array<{ ready: boolean }> }>('ai.reloadProviders', {}), revert: null }),
-      formatCli: (value) => uiText('assistant.providers.reloaded', { count: (value as { providers: Array<{ ready: boolean }> }).providers.filter((provider) => provider.ready).length })
+      run: async () => { const response = await api.assistant.providerStatus(); if (!response.ok || !response.data) throw new Error(response.error || 'Provider status unavailable'); return response.data },
+      formatCli: (value) => uiText('assistant.providers.reloaded', { count: (value as { providers: Array<{ configured: boolean }> }).providers.filter((provider) => provider.configured).length })
     }),
-    api.commands.register({ id: 'list-chats', label: 'Assistant: List conversations', labelKey: 'assistant.command.listChats', paletteSafe: false, sideEffect: 'read', run: async () => { await store.reloadThreads(); return store.getSnapshot().threads } }),
-    api.commands.register({ id: 'read-chat', label: 'Assistant: Read a conversation', labelKey: 'assistant.command.readChat', paletteSafe: false, sideEffect: 'read', input: idInput, run: ({ id }) => readConversation(api, id) }),
-    api.commands.register({ id: 'open-chat', label: 'Assistant: Open a conversation', labelKey: 'assistant.command.openChat', paletteSafe: false, sideEffect: 'read', input: idInput, run: async ({ id }) => { await readConversation(api, id); await store.openChat(id); api.workspace.openMainTab(); return { id } } }),
-    api.commands.register({ id: 'create-chat', label: 'Assistant: Create a saved conversation', labelKey: 'assistant.command.createChat', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ title: stringSchema }, ['title']), parse: (raw) => ({ title: text(object(raw).title, 'title') }) }, preview: (input) => input, run: async ({ title }) => {
+    commandRegistrar(api)({ id: 'list-chats', outputSchema: assistantResults['list-chats'], label: 'Assistant: List conversations', labelKey: 'assistant.command.listChats', paletteSafe: false, sideEffect: 'read', run: async () => { await store.reloadThreads(); return store.getSnapshot().threads } }),
+    commandRegistrar(api)({ id: 'read-chat', outputSchema: assistantResults['read-chat'], label: 'Assistant: Read a conversation', labelKey: 'assistant.command.readChat', paletteSafe: false, sideEffect: 'read', input: idInput, run: ({ id }) => readConversation(api, id) }),
+    commandRegistrar(api)({ id: 'open-chat', outputSchema: assistantResults['open-chat'], label: 'Assistant: Open a conversation', labelKey: 'assistant.command.openChat', paletteSafe: false, sideEffect: 'read', input: idInput, run: async ({ id }) => { await readConversation(api, id); await store.openChat(id); api.workspace.openMainTab(); return { id } } }),
+    commandRegistrar(api)({ id: 'create-chat', outputSchema: assistantResults['create-chat'], label: 'Assistant: Create a saved conversation', labelKey: 'assistant.command.createChat', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ title: stringSchema }, ['title']), parse: (raw) => ({ title: text(object(raw).title, 'title') }) }, preview: (input) => input, run: async ({ title }) => {
       const now = Date.now()
       const thread: AiChatThread = { id: `chat-${crypto.randomUUID()}`, title, createdAt: now, updatedAt: now, messages: [] }
       await save(thread)
       return { value: thread, revert: { label: `Create ${title}`, run: () => store.deleteChat(thread.id), reapply: () => save(thread) } }
     } }),
-    api.commands.register({ id: 'update-chat', label: 'Assistant: Update conversation properties', labelKey: 'assistant.command.updateChat', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ id: stringSchema, patch: patchSchema }, ['id', 'patch']), parse: (raw) => { const value = object(raw); return { id: text(value.id, 'id'), patch: chatPatch(value.patch) } } }, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: (input) => input, run: ({ id, patch }) => update(id, patch) }),
-    api.commands.register({ id: 'update-properties', label: 'Assistant: Edit Properties', labelKey: 'assistant.command.updateProperties', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ subject: { type: 'object' }, values: patchSchema }, ['subject', 'values']), parse: (raw) => { const value = object(raw); const subject = object(value.subject); if (subject.pluginId !== api.pluginId) throw new Error(uiText('assistant.error.wrongPropertyOwner')); return { id: text(object(subject.item).id, 'subject.item.id'), patch: chatPatch(value.values) } } }, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: (input) => input, run: ({ id, patch }) => update(id, patch) }),
-    ...(['clear-chat', 'delete-chat'] as const).map((operation) => api.commands.register({ id: operation, label: `Assistant: ${operation === 'clear-chat' ? 'Clear' : 'Delete'} a conversation`, labelKey: operation === 'clear-chat' ? 'assistant.command.clearChat' : 'assistant.command.deleteChat', paletteSafe: false, sideEffect: 'write', input: idInput, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: ({ id }) => ({ id, operation }), run: ({ id }) => changeConversation(api, id, operation) })),
-    api.commands.register({ id: 'send-message', label: 'Assistant: Send a message to a conversation', labelKey: 'assistant.command.sendMessage', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ id: stringSchema, text: stringSchema }, ['id', 'text']), parse: (raw) => { const value = object(raw); return { id: text(value.id, 'id'), text: text(value.text, 'text') } } }, preview: (input) => input, run: async ({ id, text: message }) => {
+    commandRegistrar(api)({ id: 'update-chat', outputSchema: assistantResults['update-chat'], label: 'Assistant: Update conversation properties', labelKey: 'assistant.command.updateChat', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ id: stringSchema, patch: patchSchema }, ['id', 'patch']), parse: (raw) => { const value = object(raw); return { id: text(value.id, 'id'), patch: chatPatch(value.patch) } } }, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: (input) => input, run: ({ id, patch }) => update(id, patch) }),
+    commandRegistrar(api)({ id: 'update-properties', outputSchema: assistantResults['update-properties'], label: 'Assistant: Edit Properties', labelKey: 'assistant.command.updateProperties', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ subject: { type: 'object' }, values: patchSchema }, ['subject', 'values']), parse: (raw) => { const value = object(raw); const subject = object(value.subject); if (subject.pluginId !== api.pluginId) throw new Error(uiText('assistant.error.wrongPropertyOwner')); return { id: text(object(subject.item).id, 'subject.item.id'), patch: chatPatch(value.values) } } }, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: (input) => input, run: ({ id, patch }) => update(id, patch) }),
+    ...(['clear-chat', 'delete-chat'] as const).map((operation) => commandRegistrar(api)({ id: operation, outputSchema: assistantResults[operation], label: `Assistant: ${operation === 'clear-chat' ? 'Clear' : 'Delete'} a conversation`, labelKey: operation === 'clear-chat' ? 'assistant.command.clearChat' : 'assistant.command.deleteChat', paletteSafe: false, sideEffect: 'write', input: idInput, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: ({ id }) => ({ id, operation }), run: ({ id }) => changeConversation(api, id, operation) })),
+    commandRegistrar(api)({ id: 'send-message', outputSchema: assistantResults['send-message'], label: 'Assistant: Send a message to a conversation', labelKey: 'assistant.command.sendMessage', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ id: stringSchema, text: stringSchema }, ['id', 'text']), parse: (raw) => { const value = object(raw); return { id: text(value.id, 'id'), text: text(value.text, 'text') } } }, preview: (input) => input, run: async ({ id, text: message }, context) => {
       const thread = await readConversation(api, id)
       if (thread.source) throw new Error(uiText('assistant.error.remoteMessage'))
-      if (store.getSnapshot().busy) throw new Error(uiText('assistant.error.waitMessage'))
       await store.openChat(id)
-      await store.send(message)
-      const snapshot = store.getSnapshot()
-      if (snapshot.error) throw new Error(snapshot.error)
-      return { value: await readConversation(api, id), revert: null }
+      const session = await api.backend.callOperation<SessionSnapshot>('command.session.submit', { id: crypto.randomUUID(), conversationId: id, text: message }, { cancellation: context.cancellation })
+      if (session.error || session.state === 'FAILED' || session.state === 'INTERRUPTED') throw new Error(session.error ?? 'Conversation did not complete')
+      return { value: session.thread ?? await readConversation(api, id), revert: null }
     } }),
-    api.commands.register({ id: 'stop-chat', label: 'Assistant: Stop a conversation run', labelKey: 'assistant.command.stopChat', paletteSafe: false, sideEffect: 'read', input: idInput, run: ({ id }) => { store.stop(id); return { id, stopped: true } } }),
-    api.commands.register({ id: 'read-memory', label: 'Assistant: Read conversation memory', labelKey: 'assistant.command.readMemory', paletteSafe: false, sideEffect: 'read', input: idInput, run: async ({ id }) => { await readConversation(api, id); const result = await api.assistant.readMemory(id); if (!result.ok) throw new Error(result.error || uiText('assistant.error.readMemory')); return result.data } })
+    commandRegistrar(api)({ id: 'stop-chat', outputSchema: assistantResults['stop-chat'], label: 'Assistant: Stop a conversation run', labelKey: 'assistant.command.stopChat', paletteSafe: false, sideEffect: 'execute', input: idInput, run: ({ id }) => { store.stop(id); return { id, stopped: true } } }),
+    commandRegistrar(api)({ id: 'read-memory', outputSchema: assistantResults['read-memory'], label: 'Assistant: Read conversation memory', labelKey: 'assistant.command.readMemory', paletteSafe: false, sideEffect: 'read', input: idInput, run: async ({ id }) => { await readConversation(api, id); const result = await api.assistant.readMemory(id); if (!result.ok) throw new Error(result.error || uiText('assistant.error.readMemory')); return result.data } })
   ]
   return () => offs.forEach((off) => off())
 }

@@ -222,7 +222,7 @@ describe('assistant settings — channel list page', () => {
 })
 
 describe('assistant settings — chat pane', () => {
-  it('offers only Vault only and Full access in conversation Properties without saving an empty chat', async () => {
+  it('embeds the host field access control without saving an empty chat or mutating Guards', async () => {
     const mock = createMockValleyApi({ manifest: { id: 'assistant' } })
     initRuntime(mock.api)
     initLocalization(mock.api)
@@ -230,13 +230,14 @@ describe('assistant settings — chat pane', () => {
     await store.whenReady
     await store.newChat()
     const thread = store.getSnapshot().active!
+    const host = mock.accessControl, reload = vi.spyOn(store, 'reloadConfig')
     render(<ChatDetail summary={thread} personalities={[]} connections={[]} backTo="Chat" onBack={() => {}} onChanged={async () => {}} embedded />)
-    const access = await screen.findByRole('combobox', { name: uiText('assistant.permissions.heading') })
-    expect([...access.querySelectorAll('option')].map(option => option.textContent)).toEqual(['Vault only', 'Full access'])
-    await act(async () => { fireEvent.change(access, { target: { value: 'full' } }) })
-    expect(store.getSnapshot().dangerous).toMatchObject({ enabled: true })
-    await act(async () => { fireEvent.change(access, { target: { value: 'vault' } }) })
-    expect(store.getSnapshot().dangerous).toMatchObject({ enabled: false })
+    const access = await screen.findByRole('button', { name: 'Host access control' })
+    expect(host.mock.calls.at(-1)![0]).toMatchObject({ variant: 'field' })
+    expect(Object.keys(host.mock.calls.at(-1)![0]).sort()).toEqual(['onChange', 'variant'])
+    await act(async () => { fireEvent.click(access) })
+    expect(reload).toHaveBeenCalledOnce()
+    expect(mock.driverCalls.some(call => call.method === 'saveGuard')).toBe(false)
     expect(mock.chatThreads.size).toBe(0)
   })
 

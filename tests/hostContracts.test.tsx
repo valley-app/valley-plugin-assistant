@@ -1,3 +1,4 @@
+import Ajv from 'ajv'
 import { readdirSync, readFileSync as readStyleFile } from 'node:fs'
 import { join as joinStylePath } from 'node:path'
 import { DEFAULT_PALETTE } from '@valley/plugin-sdk/palette'
@@ -23,9 +24,17 @@ afterEach(() => { document.head.querySelectorAll('style[id]').forEach((style) =>
 describe('package host contracts', () => {
   it('registers attributed command schemas and declared contextual surfaces', async () => {
     const mock = createMockValleyApi({ manifest: declared })
+    const registered = vi.spyOn(mock.api.commands, 'register')
     const dispose = plugin.register(mock.api)
     try {
       await Promise.resolve()
+      const validator = new Ajv({ strict: false })
+      const specs = registered.mock.calls.map(([spec]) => spec as typeof spec & { outputSchema?: Record<string, unknown> })
+      expect(specs.length).toBeGreaterThan(0)
+      for (const spec of specs) {
+        expect(spec.outputSchema, spec.id).toBeDefined()
+        expect(() => validator.compile(spec.outputSchema!), spec.id).not.toThrow()
+      }
       const commands = mock.api.commands.list()
       expect(commands.length, `${id} did not register its commands`).toBeGreaterThan(0)
       expect(commands.filter((command) => command.acceptsInput && !command.inputSchema).map((command) => command.id)).toEqual([])

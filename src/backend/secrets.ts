@@ -18,7 +18,7 @@ export async function setSecret(root: string, key: string, value: string, endpoi
   await api.credentials.set(key, value, endpoints, await storeFor(root, key, api))
 }
 export async function secretState(root: string, key: string, api: OwnerApi = backendApi()): Promise<SecretState> { return api.credentials.state(key, await storeFor(root, key, api)) }
-export async function hasSecret(root: string, key: string, api: OwnerApi = backendApi()): Promise<boolean> { return await secretState(root, key, api) !== 'absent' }
+export async function hasSecret(root: string, key: string, api: OwnerApi = backendApi()): Promise<boolean> { return await api.credentials.presence(key, await storeFor(root, key, api)) !== 'absent' }
 const sources = new Map<string, { root: string; key: string; api: OwnerApi; lifetime: ReturnType<typeof backendApi> }>()
 export async function credentialForEndpoint(handle: string, url: string, api?: OwnerApi): Promise<string> {
   const source = sources.get(handle)
