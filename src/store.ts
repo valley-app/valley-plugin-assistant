@@ -788,6 +788,14 @@ class AssistantStore {
     if (this.state.active) void this.api.backend.call('session.interruptVoice', { conversationId: this.state.active.id })
   }
 
+  // Sealed test fixtures only (sealedTestCommands.ts): drops the renderer copy of a session the backend already forgot.
+  async forgetSession(id: string): Promise<void> {
+    this.sessions.delete(id); this.stoppedChats.delete(id); this.pausedMessages.delete(id); this.deliveryErrors.delete(id)
+    await this.reloadThreads()
+    if (this.state.active?.id === id) await this.openChat(id, false)
+    this.notify()
+  }
+
   stop(id = this.state.active?.id): void {
     if (id) for (const admission of this.admissions.get(id) ?? []) admission.abort()
     if (id && this.sessions.has(id)) { void this.api.backend.call('session.stop', { conversationId: id }); return }

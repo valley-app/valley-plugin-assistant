@@ -49,6 +49,7 @@ export function sessionBackendFixture(options: MockOptions = {}) {
     if (method === 'session.resume') return coordinator.resume(input.conversationId)
     if (method === 'session.mode') return coordinator.change(input.conversationId, async thread => { thread.mode = 'plan'; if (thread.plan) thread.plan.status = 'changes'; return {} })
     if (method === 'plan.approve') return approval(raw)
+    if (method === 'chat.capture' && coordinator.snapshot((raw as { id: string }).id)) return null
     if (method === 'projects.request' && (raw as { method?: string }).method === 'context') return { project: { id: 'forest' }, roots: [] }
     return originalCall(method, raw)
   })

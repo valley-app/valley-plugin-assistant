@@ -68,6 +68,12 @@ export async function readFile(file: string, _encoding: 'utf8' = 'utf8', api: St
     if (offset > 128 * 1024 * 1024) throw new Error(t('assistant.backend.textLimit'))
   }
 }
+/** The exact bytes of a file as base64, or null when it is larger than maxBytes (at most 1 MiB). */
+export async function readBoundedBase64(file: string, maxBytes: number, api: StorageApi = backendApi()): Promise<{ base64: string; bytes: number } | null> {
+  const chunk = await api.storage.readBytes(await storageLocation(file, 'read', api), { offset: 0, maxBytes: Math.min(maxBytes + 1, 1024 * 1024) })
+  return chunk.done && chunk.nextOffset <= maxBytes ? { base64: chunk.base64, bytes: chunk.nextOffset } : null
+}
+export const base64Bytes = (base64: string): Uint8Array => Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
 function* textChunks(content: string): Generator<string> {
   for (let offset = 0; offset < content.length;) {
     let end = Math.min(content.length, offset + 256 * 1024)

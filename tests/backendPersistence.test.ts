@@ -561,6 +561,161 @@ describe('Assistant package persistence', () => {
     expect(await api.data.dataset('attachment_refs').count()).toBe(1)
   })
 
+  it('answers command deleteChat and clearChat with an undo receipt that rewrites the exact chat bytes and drops the deletion records', async () => {
+    const dispose = register(api as unknown as PluginBackendApi)
+    const operationOf = (method: string) => rpc.handleOperation.mock.calls.find(([name]) => name === method)![1]
+    const envelope = (id: string, expectedRevision?: unknown) => ({ input: { id }, execution: { id: crypto.randomUUID(), correlationId: crypto.randomUUID(), expectedRevision } })
+    const chatFiles = (id: string) => new Map([...files].filter(([file]) => file.includes(`/chats/${id}/`)).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
+    const rows = async (id: string) => ({ cleanup: await api.data.dataset('chat_cleanup').get({ id }), deletion: await api.data.dataset('conversation_deletions').get({ id }), search: await api.data.dataset('chat_search').get({ id }) })
+    try {
+      await rpc.handle.mock.calls.find(([method]) => method === 'ai.listChats')![1]({})
+      for (const name of ['deleteChat', 'clearChat'] as const) {
+        const id = `undo-${name}`
+        await saveChat('/vault', { id, title: 'Fern äöü', createdAt: 1, updatedAt: 2, messages: [{ role: 'user', content: 'Moss\r\nfern' }, { role: 'assistant', content: 'Canopy äöü' }] })
+        await appendMemory('/vault', { id }, { id: 'memory', summary: 'Waters moss', createdAt: 3 })
+        await rebuildChatSearch('/vault')
+        const before = chatFiles(id), baseline = await rows(id)
+        expect(before.size).toBeGreaterThanOrEqual(3)
+        const result = await Promise.resolve(operationOf(`command.${name}`)(envelope(id), operation())) as { value: unknown; undo: { snapshot: unknown; expectedRevision: string; affectedEntities: string[] } }
+        expect(result.value).toBeNull()
+        expect(result.undo.affectedEntities).toEqual([id])
+        expect(chatFiles(id)).not.toEqual(before)
+        expect(await operationOf('command.chat.revision')(envelope(id), operation())).toBe(result.undo.expectedRevision)
+        expect(await operationOf('command.chat.undo')({ snapshot: result.undo.snapshot, execution: { id: crypto.randomUUID(), correlationId: crypto.randomUUID(), expectedRevision: result.undo.expectedRevision } }, operation())).toBeNull()
+        expect(chatFiles(id)).toEqual(before)
+        expect(await rows(id)).toEqual(baseline)
+        expect(await readChat('/vault', id)).toMatchObject({ id, messages: [{ content: 'Moss\r\nfern' }, { content: 'Canopy äöü' }] })
+        const again = await Promise.resolve(operationOf(`command.${name}`)(envelope(id), operation())) as typeof result
+        await saveChat('/vault', { id: `${id}-other`, title: 'Other', createdAt: 1, updatedAt: 1, messages: [] })
+        if (name === 'clearChat') await renameChat('/vault', id, 'Newer title')
+        else { await api.data.dataset('chat_cleanup').delete({ id }); await saveChat('/vault', { id, title: 'Recreated', createdAt: 5, updatedAt: 5, messages: [] }) }
+        const newer = chatFiles(id)
+        await expect(Promise.resolve(operationOf('command.chat.undo')({ snapshot: again.undo.snapshot, execution: { expectedRevision: again.undo.expectedRevision } }, operation()))).rejects.toMatchObject({ code: 'UNDO_CONFLICT_STALE_TARGET', outcome: 'not-applied' })
+        expect(chatFiles(id)).toEqual(newer)
+      }
+    } finally { await dispose() }
+  })
+
+  it('offers no chat receipt for attachments, missing chats or a forged snapshot and keeps the private ai rpc unchanged', async () => {
+    const dispose = register(api as unknown as PluginBackendApi)
+    const operationOf = (method: string) => rpc.handleOperation.mock.calls.find(([name]) => name === method)![1]
+    const envelope = (id: string) => ({ input: { id }, execution: { id: crypto.randomUUID(), correlationId: crypto.randomUUID() } })
+    try {
+      await rpc.handle.mock.calls.find(([method]) => method === 'ai.listChats')![1]({})
+      await saveChat('/vault', { id: 'with-attachment', title: 'Fern', createdAt: 1, updatedAt: 1, messages: [{ role: 'user', content: 'Moss' }] })
+      await api.data.dataset('attachment_refs').upsert({ attachmentId: crypto.randomUUID(), chatId: 'with-attachment' })
+      expect(await operationOf('command.clearChat')(envelope('with-attachment'), operation())).toEqual({ value: null })
+      expect(await operationOf('command.deleteChat')(envelope('missing-chat'), operation())).toEqual({ value: null })
+      await expect(Promise.resolve(operationOf('command.chat.undo')({ snapshot: { id: '..', entries: [{ path: '../escape', kind: 'file', base64: '' }] }, execution: { expectedRevision: 'x' } }, operation()))).rejects.toThrow()
+      expect([...files.keys()].some(file => file.includes('escape'))).toBe(false)
+      for (const name of ['deleteChat', 'clearChat']) {
+        const id = `rpc-${name}`
+        await saveChat('/vault', { id, title: 'Rpc', createdAt: 1, updatedAt: 1, messages: [{ role: 'user', content: 'Moss' }] })
+        await rpc.handle.mock.calls.find(([method]) => method === `ai.${name}`)![1]({ id })
+      }
+      expect(await readChat('/vault', 'rpc-deleteChat')).toBeNull()
+      expect((await readChat('/vault', 'rpc-clearChat'))?.messages).toEqual([])
+    } finally { await dispose() }
+  })
+
+  it('restores the exact harness cache entries cleared through the private ai rpc only while the folder is unchanged', async () => {
+    const dispose = register(api as unknown as PluginBackendApi)
+    const call = (method: string, input: unknown) => rpc.handle.mock.calls.find(([name]) => name === `ai.${method}`)![1](input)
+    const cache = '/vault/.valley/plugins/data/assistant/cache/evaluations/fixture'
+    const cached = () => new Map([...files].filter(([file]) => file.includes('cache/evaluations/fixture/')).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
+    try {
+      await call('listChats', {})
+      await writeFile(`${cache}/a.json`, '{"createdAt":1,"value":{"text":"Moss äöü"}}')
+      await writeFile(`${cache}/b.json`, new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d]))
+      const before = cached(), snapshot = await call('captureHarnessCache', { id: 'fixture' })
+      expect(await call('captureHarnessCache', { id: 'absent' })).toBeNull()
+      await call('clearHarnessCache', { id: 'fixture' })
+      expect(cached().size).toBe(0)
+      const expectedRevision = await call('harnessCacheRevision', { id: 'fixture' }) as string
+      expect(await call('restoreHarnessCache', { snapshot, expectedRevision })).toEqual({ ok: true })
+      expect(cached()).toEqual(before)
+      await call('clearHarnessCache', { id: 'fixture' })
+      await writeFile(`${cache}/c.json`, '{}')
+      await expect(Promise.resolve(call('restoreHarnessCache', { snapshot, expectedRevision }))).rejects.toMatchObject({ code: 'UNDO_CONFLICT_STALE_TARGET', outcome: 'not-applied' })
+      expect([...cached().keys()].map(file => file.split('/').at(-1))).toEqual(['c.json'])
+    } finally { await dispose() }
+  })
+
+  it('forgets exactly one sealed-test conversation turn: chat bytes, coordinator session, its rows and the new instruction snapshot', async () => {
+    const describe = vi.fn(async (command: string) => command === 'ai:usage-forget' ? { id: command, location: 'core', effect: 'write' } : null)
+    const sealedApi = { ...api, commands: { describe } } as unknown as PluginBackendApi
+    const id = 'sealed-turn', chatFiles = () => new Map([...files].filter(([file]) => file.includes(`/chats/${id}/`)).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
+    const snapshot = (rowId: string, conversationId: string) => ({ id: rowId, conversationId, state: 'VALID', revision: 0, payload: { hash: rowId }, updatedAt: 1 })
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, _turn, controls) => {
+      await api.data.transaction([{ dataset: 'instruction_snapshots', operation: 'upsert', values: snapshot('shared-hash', id) }, { dataset: 'instruction_snapshots', operation: 'upsert', values: snapshot('new-hash', id) }])
+      await controls.message({ role: 'assistant', content: 'Moos-Antwort äöü' })
+    })
+    const dispose = register(sealedApi)
+    const operationOf = (method: string) => rpc.handleOperation.mock.calls.find(([name]) => name === method)?.[1]
+    const conversationRows = async () => Object.fromEntries(await Promise.all(['sessions', 'session_events', 'turn_queue', 'conversation_deletions'].map(async dataset => [dataset, await api.data.dataset(dataset).count({ conversationId: id })])))
+    try {
+      await saveChat('/vault', { id, title: 'Farn äöü', createdAt: 1, updatedAt: 2, messages: [{ role: 'user', content: 'Moss\r\nfern' }] })
+      await api.data.transaction([{ dataset: 'instruction_snapshots', operation: 'upsert', values: snapshot('shared-hash', 'other-chat') }])
+      await rebuildChatSearch('/vault')
+      expect(operationOf('test.captureSession')).toBeUndefined()
+      expect(await rpc.handle.mock.calls.find(([name]) => name === 'test.sealed')![1]({})).toBe(true)
+      const before = chatFiles(), search = await api.data.dataset('chat_search').get({ id }), instructions = (await api.data.dataset('instruction_snapshots').query({})).rows
+      const { captureId } = await operationOf('test.captureSession')!({ conversationId: id }, operation(sealedApi as never)) as { captureId: string }
+      await operationOf('command.session.submit')!({ id: 'sealed-turn-1', conversationId: id, text: 'Water the moss' }, operation(sealedApi as never))
+      expect(await conversationRows()).toMatchObject({ sessions: 1, turn_queue: 1, conversation_deletions: 0 })
+      expect(chatFiles()).not.toEqual(before)
+      await expect(Promise.resolve(operationOf('test.forgetSession')!({ captureId, conversationId: 'other-chat' }, operation(sealedApi as never)))).rejects.toMatchObject({ code: 'CAPTURE_MISMATCH', outcome: 'not-applied' })
+      const result = await operationOf('test.forgetSession')!({ captureId, conversationId: id }, operation(sealedApi as never)) as { turns: string[]; instructions: number }
+      expect(result).toMatchObject({ conversationId: id, turns: ['sealed-turn-1'], instructions: 2 })
+      expect(chatFiles()).toEqual(before)
+      expect(await conversationRows()).toEqual({ sessions: 0, session_events: 0, turn_queue: 0, conversation_deletions: 0 })
+      expect((await api.data.dataset('instruction_snapshots').query({})).rows).toEqual(instructions)
+      expect(await api.data.dataset('chat_search').get({ id })).toEqual(search)
+      expect(await operationOf('command.session.snapshot')!({ conversationId: id }, operation(sealedApi as never))).toBeNull()
+      await expect(Promise.resolve(operationOf('test.forgetSession')!({ captureId, conversationId: id }, operation(sealedApi as never)))).rejects.toMatchObject({ code: 'CAPTURE_UNAVAILABLE', outcome: 'not-applied' })
+      describe.mockResolvedValue(null)
+      await expect(Promise.resolve(operationOf('test.captureSession')!({ conversationId: id }, operation(sealedApi as never)))).rejects.toMatchObject({ code: 'TEST_MODE_REQUIRED', outcome: 'not-applied' })
+    } finally { await dispose(); run.mockRestore() }
+  })
+
+  it('forgets exactly the sealed-test harness run record and the cache entries it wrote, and refuses a history it cannot attribute', async () => {
+    const sealedApi = { ...api, commands: { describe: async (command: string) => ({ id: command, location: 'core' }) } } as unknown as PluginBackendApi
+    const dispose = register(sealedApi)
+    const operationOf = (method: string) => rpc.handleOperation.mock.calls.find(([name]) => name === method)?.[1]
+    const base = '/vault/.valley/plugins/data/assistant', runs = `${base}/evaluation-runs/fixture`, cache = `${base}/cache/evaluations/fixture`
+    const tree = () => new Map([...files].filter(([file]) => file.includes('evaluation-runs/') || file.includes('cache/evaluations/')).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
+    const record = (runId: string) => JSON.stringify({ id: runId, harnessId: 'fixture', status: 'completed' })
+    try {
+      await rpc.handle.mock.calls.find(([method]) => method === 'ai.listChats')![1]({})
+      expect(await rpc.handle.mock.calls.find(([name]) => name === 'test.sealed')![1]({})).toBe(true)
+      const older = crypto.randomUUID()
+      await writeFile(`${runs}/${older}.json`, record(older)); await writeFile(`${cache}/kept.json`, '{"createdAt":1,"value":{"text":"Moos äöü"}}')
+      const before = tree(), { captureId } = await operationOf('test.captureHarness')!({ id: 'fixture' }, operation(sealedApi as never)) as { captureId: string }
+      const runId = crypto.randomUUID()
+      await writeFile(`${runs}/${runId}.json`, record(runId)); await writeFile(`${cache}/new.json`, '{}'); await writeFile(`${cache}/kept.json`, '{"createdAt":2}')
+      expect(await operationOf('test.forgetHarness')!({ captureId, runId }, operation(sealedApi as never))).toEqual({ harnessId: 'fixture', runId, cache: ['kept.json', 'new.json'] })
+      expect(tree()).toEqual(before)
+      const again = await operationOf('test.captureHarness')!({ id: 'fixture' }, operation(sealedApi as never)) as { captureId: string }, extra = crypto.randomUUID(), other = crypto.randomUUID()
+      await writeFile(`${runs}/${extra}.json`, record(extra)); await writeFile(`${runs}/${other}.json`, record(other))
+      const changed = tree()
+      await expect(Promise.resolve(operationOf('test.forgetHarness')!({ captureId: again.captureId, runId: extra }, operation(sealedApi as never)))).rejects.toMatchObject({ code: 'RUN_MISMATCH', outcome: 'not-applied' })
+      expect(tree()).toEqual(changed)
+    } finally { await dispose() }
+  })
+
+  it('keeps production unchanged: without the sealed-test core descriptor no test operation is registered or applied', async () => {
+    for (const commands of [undefined, { describe: async () => null }, { describe: async (command: string) => ({ id: command, location: 'backend' }) }, { describe: async () => { throw new Error('unavailable') } }]) {
+      rpc.handleOperation.mockClear(); rpc.handle.mockClear()
+      const owner = (commands ? { ...api, commands } : api) as unknown as PluginBackendApi, dispose = register(owner)
+      try {
+        const operations = () => [...rpc.handleOperation.mock.calls, ...rpc.handle.mock.calls].map(([name]) => name).filter(name => name.startsWith('test.'))
+        expect(operations()).toEqual(['test.sealed'])
+        expect(await rpc.handle.mock.calls.find(([name]) => name === 'test.sealed')![1]({})).toBe(false)
+        expect(operations()).toEqual(['test.sealed'])
+      } finally { await dispose() }
+    }
+  })
+
 })
 
 

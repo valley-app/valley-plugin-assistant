@@ -87,6 +87,18 @@ export class SessionCoordinator {
     })
   }
 
+  // Sealed test fixtures only (sealedTest.ts): drops an idle conversation's in-memory session and turn bookkeeping without recording a deletion.
+  async forget(id: string): Promise<string[]> {
+    return this.serial(id, async () => {
+      if (this.active.has(id)) throw Object.assign(new Error('Conversation must be idle before it is forgotten'), { code: 'SESSION_ACTIVE', outcome: 'not-applied' })
+      const session = this.sessions.get(id), turns = [...(session?.queue ?? []), ...(session?.currentTurn ? [session.currentTurn] : [])].map(turn => turn.id)
+      for (const [turn, result] of this.turnResults) if (result.snapshot.conversationId === id) { this.turnResults.delete(turn); turns.push(turn) }
+      for (const turn of turns) { this.turnOwners.delete(turn); this.rejectedAdmissions.delete(turn) }
+      this.continuationOwners.delete(id); this.committed.delete(id); this.sessions.delete(id); this.notify()
+      return [...new Set(turns)].sort()
+    })
+  }
+
   async change(id: string, operation: (thread: AiChatThread) => Promise<{ turn?: TurnSubmission; effects?: Parameters<AssistantRepository['commit']>[3] }>, api?: OwnerApi): Promise<void> {
     await this.serial(id, async () => {
       const session = this.sessions.get(id)
@@ -251,6 +263,9 @@ export class SessionCoordinator {
   }
 
   async resume(id: string, api?: OwnerApi): Promise<void> {
+    // A stopped run stays active until its final projection settles; resuming then must wait for it instead of being dropped as a no-op.
+    const finishing = this.active.get(id)
+    if (finishing && (finishing.completed || finishing.controller.signal.aborted)) await finishing.task.catch(() => {})
     await this.serial(id, async () => {
       const session = this.sessions.get(id)
       if (!session || this.active.has(id)) return

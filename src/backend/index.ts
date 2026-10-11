@@ -5,7 +5,7 @@ import { AssistantRuntime } from './engine/service'
 import { configurationHandlers } from './configuration'
 import { configurationDomainHandlers, configurationDomainSchemas } from './configuration/domainCommands'
 import { readConfig } from './store'
-import { rebuildChatSearch, listChats, readChat, renameChat, deleteChat, clearChat, setChatPinned, saveChat } from './threads'
+import { rebuildChatSearch, listChats, readChat, renameChat, deleteChat, clearChat, setChatPinned, saveChat, captureChat, chatRevision, restoreChat } from './threads'
 import { readMemory } from './memory'
 import { steerRuntime, runNativeRuntime, respondToRuntime } from './runtimes'
 import { z } from 'zod'
@@ -27,6 +27,7 @@ import { transportValue } from './transport'
 import { admitTurn } from './engine/responsiveness'
 import type { TurnSubmission } from '../contracts/execution'
 import type { OutboundDelivery } from './channels/deliveryQueue'
+import { createSealedTestOperations } from './sealedTest'
 export function register(api: PluginBackendApi): () => Promise<void> {
   const workflow = createWorkflowAdapter(api)
   initBackend(api)
@@ -71,20 +72,40 @@ export function register(api: PluginBackendApi): () => Promise<void> {
     'command.session.steer': async (input, owner, context) => { const value = sessionInput.extend({ turnId: z.string().min(1).max(256) }).strict().parse(input); await runtime.coordinator.steer(value.conversationId, value.turnId, owner); await runtime.coordinator.waitForTurn(value.conversationId, value.turnId, context?.cancellation); return null },
     'command.session.plan': async (input, owner) => { const value = sessionInput.strict().parse(input); await runtime.coordinator.change(value.conversationId, async thread => { thread.mode = 'plan'; if (thread.plan) thread.plan.status = 'changes'; return {} }, owner); return null }
   }
-  for (const name of ['listChats', 'readChat', 'renameChat', 'deleteChat', 'clearChat', 'setChatPinned', 'readMemory'] as const) commandHandlers[`command.${name}`] = async (input, owner) => {
+  for (const name of ['listChats', 'readChat', 'renameChat', 'setChatPinned', 'readMemory'] as const) commandHandlers[`command.${name}`] = async (input, owner) => {
     const method = aiDriver[name], payload = method.schema.parse(input)
-    if (name === 'deleteChat' || name === 'clearChat') await runtime.coordinator.remove((payload as { id: string }).id, owner)
     const value = payload as { id: string; title: string; pinned: boolean }
     if (name === 'listChats') return { chats: await listChats(VAULT_ROOT, false, owner) }
     if (name === 'readChat') return { thread: await readChat(VAULT_ROOT, value.id, owner) }
     if (name === 'renameChat') await renameChat(VAULT_ROOT, value.id, value.title, owner)
-    if (name === 'deleteChat') await deleteChat(VAULT_ROOT, value.id, owner)
-    if (name === 'clearChat') await clearChat(VAULT_ROOT, value.id, owner)
     if (name === 'setChatPinned') await setChatPinned(VAULT_ROOT, value.id, value.pinned, owner)
     if (name === 'readMemory') return { memory: await readMemory(VAULT_ROOT, (payload as { chatId: string }).chatId, owner) }
     return null
   }
+  // deleteChat/clearChat answer with a command receipt whose undo rewrites the captured chat bytes (threads.ts restoreChat).
+  const chatId = (raw: unknown) => aiDriver.deleteChat.schema.parse((raw as { input?: unknown } | null)?.input).id
+  const capture = async (id: string, owner: PluginBackendOperationContext['api']) => runtime.coordinator.snapshot(id) ? null : captureChat(VAULT_ROOT, id, owner)
+  for (const name of ['deleteChat', 'clearChat'] as const) commandHandlers[`command.${name}`] = async (raw, owner) => {
+    const id = chatId(raw), snapshot = await capture(id, owner)
+    await runtime.coordinator.remove(id, owner)
+    await (name === 'deleteChat' ? deleteChat : clearChat)(VAULT_ROOT, id, owner)
+    return { value: null, ...(snapshot ? { undo: { snapshot, expectedRevision: await chatRevision(VAULT_ROOT, id, owner), affectedEntities: [id] } } : {}) }
+  }
+  // Sealed test fixtures only: the forget operations exist only after the sealed-test probe (sealedTest.ts) succeeded and re-check it per call.
+  const sealed = createSealedTestOperations(VAULT_ROOT, runtime.coordinator)
+  let sealedOperations: Promise<boolean> | undefined
+  const probeSealed = () => sealedOperations ??= sealed.sealed(api).then(on => {
+    if (!on) sealedOperations = undefined
+    else if (active) offSessions.push(...(['captureSession', 'forgetSession', 'captureHarness', 'forgetHarness'] as const).map(name => workflow.operation(`test.${name}`, (input, context) => accepted((): Promise<unknown> => sealed[name](input, context.api)))))
+    return on && active
+  })
+  commandHandlers['command.chat.revision'] = (raw, owner) => chatRevision(VAULT_ROOT, chatId(raw), owner)
+  commandHandlers['command.chat.undo'] = async (raw, owner) => { const value = raw as { snapshot?: unknown; execution?: { expectedRevision?: unknown } } | null; await restoreChat(VAULT_ROOT, value?.snapshot, value?.execution?.expectedRevision, owner); return null }
   const offSessions = [
+    workflow.operation('chat.capture', (input, context) => accepted(async () => capture(z.object({ id: z.string().min(1).max(256) }).strict().parse(input).id, context.api))),
+    api.rpc.handle('test.sealed', () => accepted(probeSealed)),
+    workflow.operation('chat.revision', (input, context) => accepted(async () => chatRevision(VAULT_ROOT, z.object({ id: z.string().min(1).max(256) }).strict().parse(input).id, context.api))),
+    workflow.operation('chat.restore', (input, context) => accepted(async () => { const value = z.object({ snapshot: z.unknown(), expectedRevision: z.string().length(64) }).strict().parse(input); await restoreChat(VAULT_ROOT, value.snapshot, value.expectedRevision, context.api); return null })),
     workflow.local('workflow.telegram.send', (input, context) => accepted(async () => {
       const value = z.object({ conversationId: z.string().min(1).max(256), text: z.string().trim().min(1).max(500000) }).strict().parse(input)
       context.cancellation.throwIfAborted()

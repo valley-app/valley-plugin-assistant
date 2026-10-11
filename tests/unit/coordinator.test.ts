@@ -236,4 +236,29 @@ describe('durable session coordinator', () => {
     await coordinator.close()
   })
 
+  it('resumes a stopped turn and steers a running one to known completed snapshots instead of interrupted failures', async () => {
+    let calls = 0, settle: (() => void) | undefined
+    const coordinator = new SessionCoordinator(new AssistantRepository(datasetFixture()), { publish: vi.fn(), project: async (session) => { if (session.state === 'INTERRUPTED' || session.state === 'QUEUED') await new Promise<void>(resolve => { settle = resolve }) }, run: async (_session, turn, controls) => {
+      const call = ++calls
+      if (call === 1 || call === 3) await new Promise<void>((_resolve, reject) => controls.signal.addEventListener('abort', () => reject(new Error('Execution interrupted')), { once: true }))
+      await controls.message({ role: 'assistant', content: `Reply ${call} ${turn?.text ?? 'continued'}` })
+    } })
+    const stopped = submission('stopped')
+    await coordinator.enqueue(stopped)
+    await until(() => calls === 1)
+    await coordinator.stop('stopped')
+    await until(() => coordinator.snapshot('stopped')?.state === 'INTERRUPTED' && Boolean(settle))
+    const resumed = coordinator.resume('stopped').then(() => coordinator.waitForTurn('stopped'))
+    settle!(); settle = undefined
+    expect(await resumed).toMatchObject({ state: 'IDLE', thread: { messages: [{ role: 'assistant', content: 'Reply 2 continued' }] } })
+    const first = submission('steered'), second = { ...submission('steered'), text: 'Steer moss' }
+    await coordinator.enqueue(first)
+    await until(() => calls === 3)
+    await coordinator.enqueue(second)
+    const steered = coordinator.steer('steered', second.id).then(() => coordinator.waitForTurn('steered', second.id))
+    await until(() => Boolean(settle)); settle!()
+    expect(await steered).toMatchObject({ state: 'IDLE', thread: { messages: [{ role: 'assistant', content: 'Reply 4 Steer moss' }] } })
+    await coordinator.close()
+  })
+
 })

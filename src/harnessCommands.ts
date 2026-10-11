@@ -119,10 +119,15 @@ export function registerHarnessCommands(api: ValleyPluginApi): () => void {
     sideEffect: 'write',
     usage: 'harness clear-cache <id>',
     input: { schema: inputSchema({ id: string }, ['id']), parse: (raw) => raw, fromCli: (args) => ({ id: args[0] }) },
-    run: (input) => {
+    revision: (input) => invokeAiData<string>('harnessCacheRevision', { id: asStr((input as Record<string, unknown>)?.id) }),
+    run: async (input) => {
       const id = asStr((input as Record<string, unknown>)?.id)
       if (!id) throw new Error(t('assistant.harness.usage', { value: 'harness clear-cache <id>' }))
-      return invokeAiData('clearHarnessCache', { id }).then((value) => ({ value, revert: null }))
+      const snapshot = await invokeAiData<unknown>('captureHarnessCache', { id })
+      const value = await invokeAiData('clearHarnessCache', { id })
+      if (!snapshot) return { value, revert: null }
+      const expectedRevision = await invokeAiData<string>('harnessCacheRevision', { id })
+      return { value, revert: { label: `Clear ${id} cache`, run: async () => { await invokeAiData('restoreHarnessCache', { snapshot, expectedRevision }) } } }
     },
     formatCli: () => t('assistant.harness.cleared')
   }))

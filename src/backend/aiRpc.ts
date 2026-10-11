@@ -11,6 +11,7 @@ import type { GuardAuditEntry } from '@valley/plugin-sdk/guard/types'
 import { defineDriver, defineDriverMethod } from './contract'
 import { createHarnessPackage, ensureHarnessPackages, listHarnessPackageStatuses, readHarnessPackage, reloadHarnessPackages, saveHarnessSettings, writeHarnessFile } from './exports'
 import { clearHarnessCache } from './exports'
+import { captureHarnessCache, harnessCacheRevision, restoreHarnessCache } from './harness/cache'
 import { cancelHarnessRun, listHarnessRuns, readHarnessRun, startHarnessRun } from './exports'
 import type { HarnessConfig, HarnessCreatePackage, HarnessManifest, HarnessSettingValue } from '../harnessTypes'
 
@@ -246,6 +247,9 @@ export const aiDriver = defineDriver({
     await clearHarnessCache(root, payload.id)
     return { ok: true }
   }),
+  captureHarnessCache: defineDriverMethod(z.object({ id: harnessId }), (root, payload) => captureHarnessCache(root, payload.id)),
+  harnessCacheRevision: defineDriverMethod(z.object({ id: harnessId }), (root, payload) => harnessCacheRevision(root, payload.id)),
+  restoreHarnessCache: defineDriverMethod(z.object({ snapshot: z.unknown(), expectedRevision: z.string().length(64) }), async (root, payload) => { await restoreHarnessCache(root, payload.snapshot, payload.expectedRevision); return { ok: true } }),
   chat: defineDriverMethod(chatRequest, (root, payload) => {
       const req = payload
       void startRun(root, req)

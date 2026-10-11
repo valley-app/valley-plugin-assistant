@@ -1,5 +1,6 @@
-import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
+import type { DatasetRecord, PluginBackendOperationContext } from '@valley/plugin-sdk'
 type OwnerApi = PluginBackendOperationContext['api']
+type DatasetRow = DatasetRecord & { state?: string }
 import { stopChatProcesses } from './processScopes'
 import { assertChatWritable, referenceAttachments, deleteChatData, markChatDeleting, datasetRows } from './attachments'
 import { cancelChatRuns } from './engine'
@@ -15,6 +16,9 @@ import { readJson, readText } from './repositoryFiles'
 import { normalizeCommands } from './commandConfig'
 import { conversationConfiguration } from './configuration/conversations'
 import { transportValue } from './transport'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
+import { z } from 'zod'
 
 // ── Chats (Meadow/Chorus folders) ────────────────────────────────────────────
 // Each chat is a folder: `settings.json` (meta), an append-only `thread.jsonl`
@@ -388,6 +392,86 @@ export async function clearChat(vaultRoot: string, id: string, api: OwnerApi = b
       await updateChatSearch(() => indexChat(threadFromMeta(cleared, []), api), api)
     }
   }
+  }, api)
+}
+
+// ── Chat restore (command receipts and renderer reverts for delete/clear) ────
+// Only an app chat with no attachments, coordinator session, deletion or cleanup record and a bounded folder can be captured; its
+// exact bytes are rewritten only while the chat still has the revision observed right after the original operation.
+const CHAT_SNAPSHOT_BYTES = 512 * 1024
+const chatEntrySchema = z.object({ path: z.string().min(1).max(512).refine(value => value.split('/').every(part => part && part !== '.' && part !== '..')), kind: z.enum(['folder', 'file']), base64: z.string().max(CHAT_SNAPSHOT_BYTES * 2).optional() }).strict()
+export const chatSnapshotSchema = z.object({ id: z.string().min(1).max(256).refine(isSafeName), entries: z.array(chatEntrySchema).min(1).max(64) }).strict()
+export type ChatSnapshot = z.infer<typeof chatSnapshotSchema>
+async function chatEntries(dir: string, api: OwnerApi): Promise<ChatSnapshot['entries'] | null> {
+  const entries: ChatSnapshot['entries'] = [], pending = ['']
+  let bytes = 0
+  while (pending.length) {
+    const rel = pending.shift()!
+    const children = (await fs.readdir(rel ? path.join(dir, rel) : dir, { withFileTypes: true }, api)).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    for (const entry of children) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name
+      if (entries.length >= 64 || entry.isSymbolicLink() || !entry.isDirectory() && !entry.isFile()) return null
+      if (entry.isDirectory()) { entries.push({ path: child, kind: 'folder' }); pending.push(child); continue }
+      const read = await fs.readBoundedBase64(path.join(dir, child), CHAT_SNAPSHOT_BYTES - bytes, api)
+      if (!read) return null
+      bytes += read.bytes
+      entries.push({ path: child, kind: 'file', base64: read.base64 })
+    }
+  }
+  return entries
+}
+const stale = () => Object.assign(new Error('The conversation changed after this operation; restoring it would overwrite newer changes'), { code: 'UNDO_CONFLICT_STALE_TARGET', outcome: 'not-applied' })
+export async function chatRevision(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<string> {
+  const dir = isSafeName(id) ? await resolveChatDir(vaultRoot, id, api) : null, cleanup = isSafeName(id) ? await api.data.dataset<DatasetRow>('chat_cleanup').get({ id }) : null
+  const entries = dir ? await chatEntries(dir, api) : []
+  const meta = dir && !entries ? await readMeta(dir, api) : null
+  return bytesToHex(sha256(new TextEncoder().encode(JSON.stringify({ dir: dir && path.relative(vaultRoot, dir), entries: entries?.map(entry => [entry.path, entry.kind, entry.base64 === undefined ? null : bytesToHex(sha256(new TextEncoder().encode(entry.base64)))]) ?? { unbounded: meta?.updatedAt ?? null }, cleanup: cleanup?.state ?? null }))))
+}
+export async function captureChat(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<ChatSnapshot | null> {
+  if (!isSafeName(id)) return null
+  const dir = await resolveChatDir(vaultRoot, id, api)
+  if (dir !== path.join(chorusChatsDir(vaultRoot), safeSegment(id))) return null
+  for (const dataset of ['chat_cleanup', 'conversation_deletions', 'sessions']) if (await api.data.dataset<DatasetRow>(dataset).get({ id })) return null
+  if (await api.data.dataset<DatasetRow>('attachment_refs').count({ chatId: id })) return null
+  const entries = await chatEntries(dir, api)
+  return entries?.length ? { id, entries } : null
+}
+export async function restoreChat(vaultRoot: string, raw: unknown, expectedRevision: unknown, api: OwnerApi = backendApi()): Promise<void> {
+  const snapshot = chatSnapshotSchema.parse(raw), dir = path.join(chorusChatsDir(vaultRoot), safeSegment(snapshot.id))
+  await runExclusive(`chat:${snapshot.id}`, async () => {
+    if (typeof expectedRevision !== 'string' || await chatRevision(vaultRoot, snapshot.id, api) !== expectedRevision) throw stale()
+    const current = await resolveChatDir(vaultRoot, snapshot.id, api)
+    if (current && current !== dir) throw stale()
+    await fs.mkdir(dir, { recursive: true }, api)
+    for (const entry of snapshot.entries) {
+      const file = path.join(dir, entry.path)
+      if (entry.kind === 'folder') await fs.mkdir(file, { recursive: true }, api)
+      else await runExclusive(file, () => atomicWriteFile(file, fs.base64Bytes(entry.base64 ?? ''), api), api)
+    }
+    await api.data.transaction([{ dataset: 'chat_cleanup', operation: 'delete', key: { id: snapshot.id } }, { dataset: 'conversation_deletions', operation: 'delete', key: { id: snapshot.id } }])
+    await updateChatSearch(async () => { const thread = await readChat(vaultRoot, snapshot.id, api); if (thread) await indexChat(thread, api) }, api)
+  }, api)
+}
+// Sealed test fixtures only (sealedTest.ts): the bounded entries of one app chat folder, [] when absent, null when unbounded or elsewhere.
+export async function chatEntriesOf(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<ChatSnapshot['entries'] | null> {
+  const dir = path.join(chorusChatsDir(vaultRoot), safeSegment(id)), current = isSafeName(id) ? await resolveChatDir(vaultRoot, id, api) : null
+  return current === null ? [] : current === dir ? chatEntries(dir, api) : null
+}
+// The chat folder becomes exactly the captured entries again: extra files and folders are removed, captured bytes rewritten.
+export async function rewriteChat(vaultRoot: string, raw: unknown, api: OwnerApi = backendApi()): Promise<void> {
+  const snapshot = chatSnapshotSchema.parse(raw), dir = path.join(chorusChatsDir(vaultRoot), safeSegment(snapshot.id))
+  await runExclusive(`chat:${snapshot.id}`, async () => {
+    const present = await chatEntriesOf(vaultRoot, snapshot.id, api)
+    if (!present) throw stale()
+    const kept = new Map(snapshot.entries.map(entry => [entry.path, entry.kind]))
+    for (const entry of [...present].reverse()) if (kept.get(entry.path) !== entry.kind) await fs.rm(path.join(dir, entry.path), { recursive: true, force: true }, api)
+    await fs.mkdir(dir, { recursive: true }, api)
+    for (const entry of snapshot.entries) {
+      const file = path.join(dir, entry.path)
+      if (entry.kind === 'folder') await fs.mkdir(file, { recursive: true }, api)
+      else await runExclusive(file, () => atomicWriteFile(file, fs.base64Bytes(entry.base64 ?? ''), api), api)
+    }
+    await updateChatSearch(async () => { const thread = await readChat(vaultRoot, snapshot.id, api); if (thread) await indexChat(thread, api); else await api.data.dataset('chat_search').delete({ id: snapshot.id }) }, api)
   }, api)
 }
 

@@ -1,6 +1,7 @@
 import { commandRegistrar, assistantResults } from './commandResults'
 import { uiText } from './localization'
 import { registerHarnessCommands } from './harnessCommands'
+import { registerSealedTestCommands } from './sealedTestCommands'
 import type { ValleyPluginApi } from './api'
 import type { AiChatThread, CustomCommand } from './types'
 import type { SessionSnapshot } from './contracts/execution'
@@ -81,14 +82,19 @@ export async function updateConversation(api: ValleyPluginApi, id: string, patch
   return { value: after, revert: { label: `Update ${before.title}`, run: () => saveConversation(api, before), reapply: () => saveConversation(api, after) } }
 }
 
-export async function changeConversation(api: ValleyPluginApi, id: string, operation: 'clear-chat' | 'delete-chat') {
+export async function changeConversation(api: ValleyPluginApi, id: string, operation: 'clear-chat' | 'delete-chat', reversible = false) {
   const store = getStore(api)
   await readConversation(api, id)
   if (store.getSnapshot().busy) throw new Error(uiText('assistant.error.stopClear'))
+  // Commands capture a bounded app chat in the backend first; the revert rewrites those exact bytes while the chat is unchanged since.
+  const snapshot = reversible ? await api.backend.callOperation<unknown>('chat.capture', { id }) : null
   if (operation === 'clear-chat') await store.clearChat(id)
   else await store.deleteChat(id)
-  return { value: { id, operation }, revert: null }
+  if (!snapshot) return { value: { id, operation }, revert: null }
+  const revision = await chatRevision(api, id)
+  return { value: { id, operation }, revert: { label: `${operation === 'clear-chat' ? 'Clear' : 'Delete'} ${id}`, run: async () => { await api.backend.callOperation('chat.restore', { snapshot, expectedRevision: revision }); await refreshConversation(api, id) } } }
 }
+export const chatRevision = (api: ValleyPluginApi, id: string): Promise<string> => api.backend.callOperation<string>('chat.revision', { id })
 
 export function registerAssistantCommands(api: ValleyPluginApi): () => void {
   const store = getStore(api)
@@ -98,6 +104,7 @@ export function registerAssistantCommands(api: ValleyPluginApi): () => void {
   const patchSchema = schema({ title: stringSchema, pinned: { type: 'boolean' }, model: { anyOf: [{ type: 'null' }, schema({ provider: stringSchema, model: stringSchema, connectionId: stringSchema }, ['provider', 'model'])] }, profileId: { type: ['string', 'null'] }, attachmentParser: { type: ['string', 'null'] }, commands: { type: 'array', items: schema({ name: stringSchema, prompt: stringSchema, description: { type: 'string' } }, ['name', 'prompt']) } })
   const offs = [
     registerHarnessCommands(api),
+    registerSealedTestCommands(api),
     commandRegistrar(api)({
       id: 'providers-reload', outputSchema: assistantResults['providers-reload'],
       label: 'Providers: Reload', labelKey: 'assistant.command.reloadProviders',
@@ -117,7 +124,7 @@ export function registerAssistantCommands(api: ValleyPluginApi): () => void {
     } }),
     commandRegistrar(api)({ id: 'update-chat', outputSchema: assistantResults['update-chat'], label: 'Assistant: Update conversation properties', labelKey: 'assistant.command.updateChat', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ id: stringSchema, patch: patchSchema }, ['id', 'patch']), parse: (raw) => { const value = object(raw); return { id: text(value.id, 'id'), patch: chatPatch(value.patch) } } }, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: (input) => input, run: ({ id, patch }) => update(id, patch) }),
     commandRegistrar(api)({ id: 'update-properties', outputSchema: assistantResults['update-properties'], label: 'Assistant: Edit Properties', labelKey: 'assistant.command.updateProperties', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ subject: { type: 'object' }, values: patchSchema }, ['subject', 'values']), parse: (raw) => { const value = object(raw); const subject = object(value.subject); if (subject.pluginId !== api.pluginId) throw new Error(uiText('assistant.error.wrongPropertyOwner')); return { id: text(object(subject.item).id, 'subject.item.id'), patch: chatPatch(value.values) } } }, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: (input) => input, run: ({ id, patch }) => update(id, patch) }),
-    ...(['clear-chat', 'delete-chat'] as const).map((operation) => commandRegistrar(api)({ id: operation, outputSchema: assistantResults[operation], label: `Assistant: ${operation === 'clear-chat' ? 'Clear' : 'Delete'} a conversation`, labelKey: operation === 'clear-chat' ? 'assistant.command.clearChat' : 'assistant.command.deleteChat', paletteSafe: false, sideEffect: 'write', input: idInput, revision: async ({ id }) => (await readConversation(api, id)).updatedAt, preview: ({ id }) => ({ id, operation }), run: ({ id }) => changeConversation(api, id, operation) })),
+    ...(['clear-chat', 'delete-chat'] as const).map((operation) => commandRegistrar(api)({ id: operation, outputSchema: assistantResults[operation], label: `Assistant: ${operation === 'clear-chat' ? 'Clear' : 'Delete'} a conversation`, labelKey: operation === 'clear-chat' ? 'assistant.command.clearChat' : 'assistant.command.deleteChat', paletteSafe: false, sideEffect: 'write', input: idInput, revision: ({ id }) => chatRevision(api, id), preview: ({ id }) => ({ id, operation }), run: ({ id }) => changeConversation(api, id, operation, true) })),
     commandRegistrar(api)({ id: 'send-message', outputSchema: assistantResults['send-message'], label: 'Assistant: Send a message to a conversation', labelKey: 'assistant.command.sendMessage', paletteSafe: false, sideEffect: 'write', input: { schema: schema({ id: stringSchema, text: stringSchema }, ['id', 'text']), parse: (raw) => { const value = object(raw); return { id: text(value.id, 'id'), text: text(value.text, 'text') } } }, preview: (input) => input, run: async ({ id, text: message }, context) => {
       const thread = await readConversation(api, id)
       if (thread.source) throw new Error(uiText('assistant.error.remoteMessage'))

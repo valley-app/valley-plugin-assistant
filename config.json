@@ -2091,7 +2091,10 @@
             },
             "outputSchema": {
               "type": "null"
-            }
+            },
+            "result": "command",
+            "revisionMethod": "command.chat.revision",
+            "undoMethod": "command.chat.undo"
           }
         }
       },
@@ -2127,8 +2130,35 @@
             },
             "outputSchema": {
               "type": "null"
-            }
+            },
+            "result": "command",
+            "revisionMethod": "command.chat.revision",
+            "undoMethod": "command.chat.undo"
           }
+        }
+      },
+      {
+        "id": "command.chat.revision",
+        "version": "1.0.0",
+        "method": "command.chat.revision",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        }
+      },
+      {
+        "id": "command.chat.undo",
+        "version": "1.0.0",
+        "method": "command.chat.undo",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
         }
       },
       {

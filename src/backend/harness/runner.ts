@@ -387,6 +387,7 @@ export function cancelHarnessRun(runId: string): boolean {
   return true
 }
 
+export const harnessRunActive = (runId: string): boolean => activeRuns.has(runId)
 export function cancelAllHarnessRuns(): void { for (const controller of activeRuns.values()) controller.abort() }
 
 export async function listHarnessRuns(root: string, harnessId: string, limit = 50): Promise<HarnessRun[]> {
