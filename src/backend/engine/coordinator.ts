@@ -31,6 +31,9 @@ class StalledSave extends Error {}
 /** These tools only read the command catalog, so a stopped turn that ran nothing else still changed nothing. A stored
  *  tool result names its tool only through the call it answers, so `thread` resolves it by toolCallId. */
 const catalogTools = new Set(['command_list', 'command_describe'])
+const settledStates = ['IDLE', 'AWAITING_QUESTION', 'AWAITING_APPROVAL', 'FAILED', 'INTERRUPTED']
+const retainedConversations = 4
+const withoutMessages = (session: SessionSnapshot): SessionSnapshot => { const value = { ...session }; delete value.thread; return structuredClone(value) }
 type EffectMessage = Pick<AiMessage, 'role' | 'name' | 'toolCalls' | 'toolCallId'>
 export const touchesEffects = (message: EffectMessage, thread: readonly EffectMessage[] = []): boolean => {
   if (message.role !== 'tool') return Boolean(message.toolCalls?.some(call => !catalogTools.has(call.name)))
@@ -58,6 +61,8 @@ export class SessionCoordinator {
   private committed = new Set<string>()
   // Settled conversations restored without their messages; the stored row keeps them until the conversation is used.
   private unloaded = new Set<string>()
+  // Conversations holding their messages, least recently used first; beyond the newest few, a settled one goes back to its stored row.
+  private loaded = new Set<string>()
   private closing = false
   private rejectedAdmissions = new Set<string>()
 
@@ -83,7 +88,7 @@ export class SessionCoordinator {
     for (const turn of [...session.queue]) if (turn.admissionPending) await this.rejectAdmission(turn, new Error('Message admission was interrupted before dispatch. Submit a new instruction.'))
     const held = session.queue.filter(turn => turn.admissionPending === false)
     for (const turn of held) turn.editing = true
-    const recovering = !['IDLE', 'AWAITING_QUESTION', 'AWAITING_APPROVAL', 'FAILED', 'INTERRUPTED'].includes(session.state)
+    const recovering = !settledStates.includes(session.state)
     if (recovering) {
       session.state = 'INTERRUPTED'; session.paused = true
       session.error = 'Execution was interrupted. Review pending work and choose Continue.'
@@ -92,11 +97,26 @@ export class SessionCoordinator {
     // The transcript is projected once more (it may have missed its last write), then a settled conversation keeps only its state.
     await this.ports.project(session, true)
     if (session.thread && !recovering && !session.queue.length && !['telegram', 'whatsapp'].includes(session.thread.source ?? '')) { delete session.thread; this.unloaded.add(session.conversationId) }
+    else if (session.thread) this.loaded.add(session.conversationId)
+  }
+
+  private retain(id: string): void {
+    this.loaded.delete(id); this.loaded.add(id)
+    let excess = this.loaded.size - retainedConversations
+    for (const other of this.loaded) if (excess-- > 0) this.release(other); else break
+  }
+
+  private release(id: string): void {
+    const session = this.sessions.get(id)
+    if (!session?.thread) { this.loaded.delete(id); return }
+    if (this.active.has(id) || this.writes.has(id) || !this.committed.has(id) || session.queue.length || !settledStates.includes(session.state) || ['telegram', 'whatsapp'].includes(session.thread.source ?? '')) return
+    delete session.thread; this.unloaded.add(id); this.loaded.delete(id)
   }
 
   // A conversation restored without its messages reads them from its stored row before any use or write.
   private async hydrate(session: SessionSnapshot, api?: OwnerApi): Promise<void> {
     const id = session.conversationId
+    this.retain(id)
     if (!this.unloaded.has(id)) return
     const stored = await this.scoped(api).get<SessionSnapshot>('sessions', id).catch(() => this.repository.get<SessionSnapshot>('sessions', id))
     if (!this.unloaded.has(id)) { session.thread ??= structuredClone(this.sessions.get(id)?.thread); return }
@@ -107,7 +127,7 @@ export class SessionCoordinator {
     this.unloaded.delete(id)
   }
 
-  // A settled conversation restored at startup has no messages here until load() or a change reads them.
+  // A settled conversation restored at startup, or not used recently, has no messages here until load() or a change reads them.
   snapshot(id: string): SessionSnapshot | null { return transportValue(this.sessions.get(id) ?? null) }
 
   async load(id: string, api?: OwnerApi): Promise<SessionSnapshot | null> {
@@ -135,7 +155,7 @@ export class SessionCoordinator {
       for (const turn of this.sessions.get(id)?.queue ?? []) this.turnOwners.delete(turn.id)
       const current = this.sessions.get(id)?.currentTurn
       if (current) this.turnOwners.delete(current.id)
-      this.continuationOwners.delete(id); this.committed.delete(id); this.unloaded.delete(id)
+      this.continuationOwners.delete(id); this.committed.delete(id); this.unloaded.delete(id); this.loaded.delete(id)
       this.sessions.delete(id)
     })
   }
@@ -147,7 +167,7 @@ export class SessionCoordinator {
       const session = this.sessions.get(id), turns = [...(session?.queue ?? []), ...(session?.currentTurn ? [session.currentTurn] : [])].map(turn => turn.id)
       for (const [turn, result] of this.turnResults) if (result.snapshot.conversationId === id) { this.turnResults.delete(turn); turns.push(turn) }
       for (const turn of turns) { this.turnOwners.delete(turn); this.rejectedAdmissions.delete(turn) }
-      this.continuationOwners.delete(id); this.committed.delete(id); this.unloaded.delete(id); this.sessions.delete(id); this.notify()
+      this.continuationOwners.delete(id); this.committed.delete(id); this.unloaded.delete(id); this.loaded.delete(id); this.sessions.delete(id); this.notify()
       return [...new Set(turns)].sort()
     })
   }
@@ -463,8 +483,8 @@ export class SessionCoordinator {
       catch (error) { failure ??= error; throw error }
       finally {
         if (ownerTurnId) {
-          this.turnResults.set(ownerTurnId, { snapshot: structuredClone(session), ...(failure ? { error: failure } : {}), ...(failure && active.controller.signal.aborted && !active.steer && active.untouched ? { untouched: true } : {}) })
-          // Each result holds a whole conversation; a waiter whose result was dropped reads the session instead.
+          this.turnResults.set(ownerTurnId, { snapshot: withoutMessages(session), ...(failure ? { error: failure } : {}), ...(failure && active.controller.signal.aborted && !active.steer && active.untouched ? { untouched: true } : {}) })
+          // A result keeps no messages; its waiter, like one whose result was dropped, reads them from the session.
           if (this.turnResults.size > 32) this.turnResults.delete(this.turnResults.keys().next().value!)
         }
         this.active.delete(id); this.notify(); this.schedule()
@@ -491,7 +511,7 @@ export class SessionCoordinator {
         this.changed.add(wake)
         try {
           const result = turnId ? this.turnResults.get(turnId) : undefined
-          if (result) { if (result.error) throw signal?.aborted && result.untouched ? notApplied(signal.reason) : result.error; return structuredClone(result.snapshot) }
+          if (result) { if (result.error) throw signal?.aborted && result.untouched ? notApplied(signal.reason) : result.error; return this.withThread(result.snapshot) }
           if (signal?.aborted) {
             cancel(); await withdrawing
             if (!turnId || this.sessions.get(id)?.currentTurn?.id === turnId) await this.active.get(id)?.task.catch(() => {})
@@ -502,12 +522,20 @@ export class SessionCoordinator {
           const active = this.active.get(id)
           const pending = turnId ? session.queue.some(turn => turn.id === turnId) || session.currentTurn?.id === turnId : session.queue.length > 0 || Boolean(session.currentTurn)
           if (!active && ['FAILED', 'INTERRUPTED'].includes(session.state)) throw new Error(session.error ?? 'Execution interrupted')
-          if (!pending && !active) return structuredClone(session)
+          if (!pending && !active) return this.withThread(session)
           if (!active && session.paused) throw new Error('The submitted turn is paused and requires continuation')
           await change
         } finally { this.changed.delete(wake) }
       }
     } finally { signal?.removeEventListener('abort', cancel) }
+  }
+
+  private async withThread(value: SessionSnapshot): Promise<SessionSnapshot> {
+    const result = withoutMessages(value), session = this.sessions.get(value.conversationId)
+    if (session) await this.hydrate(session).catch(() => {})
+    const thread = this.sessions.get(value.conversationId)?.thread
+    if (thread) result.thread = structuredClone(thread)
+    return result
   }
 
   private withdraw(id: string, turnId: string): Promise<void> {

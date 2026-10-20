@@ -250,6 +250,32 @@ describe('Assistant package persistence', () => {
     await deleteChat('/vault', thread.id)
     expect(await search.get({ id: thread.id })).toBeNull()
   })
+  it('rebuilds a 3,000-row search index in selected pages without reading the indexed text', async () => {
+    const search = api.data.dataset('chat_search')
+    for (const id of ['moss-chat', 'fern-chat', 'reed-chat']) await saveChat('/vault', { id, title: `Survey ${id}`, createdAt: 1, updatedAt: 2, messages: [{ role: 'user' as const, content: `Count the ${id}.` }, { role: 'assistant' as const, content: 'Forty patches.' }] })
+    const byId = (rows: Array<Record<string, unknown>>) => [...rows].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+    const reference = byId((await search.query({ limit: 10000 })).rows)
+    expect(reference).toHaveLength(3)
+    await search.upsert({ id: 'fern-chat', title: 'Outdated', content: 'stale', preview: '', updatedAt: 2 })
+    await search.delete({ id: 'reed-chat' })
+    for (let index = 0; index < 2998; index++) await search.upsert({ id: `stale-${String(index).padStart(4, '0')}`, title: 'Old survey', content: 'Lichen count. '.repeat(50), preview: 'Lichen count.', updatedAt: 1 })
+    expect(await search.count()).toBe(3000)
+    const dataset = api.data.dataset.bind(api.data), queries: Array<{ select?: string[]; limit?: number }> = []
+    vi.spyOn(api.data, 'dataset').mockImplementation(((name: string) => {
+      const table = dataset(name)
+      if (name !== 'chat_search') return table
+      return { ...table, query: async (options: { select?: string[]; limit?: number } = {}) => {
+        queries.push(structuredClone(options))
+        const page = await table.query(options)
+        return options.select ? { ...page, rows: page.rows.map(row => Object.fromEntries(options.select!.map(field => [field, row[field]]))) } : page
+      } }
+    }) as never)
+    await rebuildChatSearch('/vault')
+    vi.mocked(api.data.dataset).mockRestore()
+    expect(queries).toHaveLength(30)
+    for (const query of queries) expect(query).toMatchObject({ select: ['id', 'title', 'updatedAt'], limit: 100 })
+    expect(byId((await search.query({ limit: 10000 })).rows)).toEqual(reference)
+  })
   it('appends only new message text to the conversation search row and rebuilds it after edits or drift', async () => {
     const dataset = api.data.dataset.bind(api.data), upserts: unknown[] = []
     vi.spyOn(api.data, 'dataset').mockImplementation(((name: string) => { const table = dataset(name); return name === 'chat_search' ? { ...table, upsert: async (record: Parameters<typeof table.upsert>[0]) => { upserts.push(structuredClone(record)); await table.upsert(record) } } : table }) as never)

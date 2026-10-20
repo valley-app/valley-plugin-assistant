@@ -2,7 +2,8 @@ import type { DatasetRecord, PluginBackendOperationContext } from '@valley/plugi
 type OwnerApi = PluginBackendOperationContext['api']
 type DatasetRow = DatasetRecord & { state?: string }
 import { stopChatProcesses } from './processScopes'
-import { assertChatWritable, referenceAttachments, deleteChatData, markChatDeleting, datasetRows } from './attachments'
+import { assertChatWritable, referenceAttachments, deleteChatData, markChatDeleting } from './attachments'
+import { boundedQuery } from './persistence/repositories'
 import { cancelChatRuns } from './engine'
 import { t, backendApi } from './runtime'
 import * as fs from './filesystem'
@@ -318,7 +319,14 @@ async function updateChatSearch(operation: () => Promise<void>, api: OwnerApi = 
 
 export async function rebuildChatSearch(vaultRoot: string, api: OwnerApi = backendApi()): Promise<void> {
   const dataset = api.data.dataset('chat_search')
-  const existing = new Map((await datasetRows(dataset)).map(row => [row.id, row]))
+  // Only each row's identity and freshness, a page at a time: every conversation's indexed text at once ran the backend out of memory.
+  const existing = new Map<unknown, DatasetRecord>()
+  let cursor: string | undefined
+  do {
+    const page = await boundedQuery(dataset, { select: ['id', 'title', 'updatedAt'], limit: 100, cursor })
+    for (const row of page.rows) existing.set(row.id, row)
+    cursor = page.cursor
+  } while (cursor)
   for (const summary of await listChats(vaultRoot, false, api)) {
     const cached = existing.get(summary.id)
     if (!cached || cached.updatedAt !== summary.updatedAt || cached.title !== summary.title) {
