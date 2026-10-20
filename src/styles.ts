@@ -269,6 +269,16 @@ const CSS = `
 .assistant-msg.mine .assistant-bubble-md :not(pre) > code {
   background: color-mix(in srgb, var(--container-color) 60%, transparent);
 }
+/* Message prose renders in the host's embedded reading view, which only receives this class and these styles.
+   It uses the note reading view's typography instead of the compact note-input scale; fenced code keeps its size. */
+.md-embedded.assistant-message-markdown :is(.md-note, .markdown-body) {
+  --md-note-font:var(--markdown-font, var(--body-font)); --md-note-size:var(--markdown-size, var(--text-font-size));
+  --md-note-line:var(--markdown-line-height, 1.65); --md-block-gap:var(--markdown-paragraph-spacing, 1em);
+  --md-heading-gap:var(--markdown-heading-spacing, 1em); --markdown-heading-spacing:unset;
+  --markdown-h1-size:unset; --markdown-h2-size:unset; --markdown-h3-size:unset; --markdown-h4-size:unset; --markdown-h5-size:unset; --markdown-h6-size:unset;
+  --markdown-mono-size:unset; --markdown-inline-code-size:unset; --markdown-table-size:unset;
+}
+.md-embedded.assistant-message-markdown .md-reading { font-family:var(--md-note-font); font-size:var(--md-note-size); line-height:var(--md-note-line); }
 .assistant-bubble-image { display:block; max-width:100%; max-height:320px; margin:6px 0 2px; border-radius:var(--radius);
   border:1px solid var(--border-light); cursor:pointer; }
 .assistant-bubble-image:hover { border-color:var(--accent-color); }
@@ -316,6 +326,7 @@ const CSS = `
 .assistant-permission-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .assistant-hand-btn svg { flex:0 0 auto; }
 .assistant-streaming { position:relative; }
+.assistant-bubble.assistant-streaming { font-family:var(--markdown-font, var(--body-font)); font-size:var(--markdown-size, var(--text-font-size)); line-height:var(--markdown-line-height, 1.65); }
 .assistant-stream-caret { display:inline-block; width:6px; height:1.1em; margin-left:2px; vertical-align:-2px;
   border-right:2px solid var(--accent-color); animation:assistant-stream-blink 1s steps(2,start) infinite; }
 .assistant-run-status { width:100%; align-self:flex-start; display:flex; align-items:flex-start;

@@ -439,6 +439,64 @@ describe('declared Assistant view slots', () => {
     expect(view.getByText('Moss retains water.')).toBeInTheDocument()
   })
 
+  it('renders message prose with the note reading view typography while work details stay compact', async () => {
+    const mock = createMockValleyApi({ manifest: { id: 'assistant' } })
+    const NativeMarkdown = mock.api.ui.MarkdownView
+    const markdown = vi.fn((props: MarkdownViewProps) => <NativeMarkdown {...props} />)
+    Object.assign(mock.api.ui, { MarkdownView: markdown })
+    const reply = '## Mosses\n\nTwo plots hold `Sphagnum`.\n\n- Plot A\n- Plot B\n\n| Plot | Moss |\n| --- | --- |\n| A | Sphagnum |'
+    mock.chatThreads.set('canopy', { id: 'canopy', title: 'Canopy', createdAt: 1, updatedAt: 1, messages: [
+      { role: 'user', content: 'Which **mosses** grow here?', ts: 1 },
+      { role: 'assistant', content: 'Surveying the plots.', ts: 2, toolCalls: [{ id: 'grep', name: 'command', arguments: { command: 'grep -rn moss plots' } }] },
+      { role: 'tool', content: '{"hits":2}', toolCallId: 'grep', name: 'command', ts: 3 },
+      { role: 'assistant', content: 'Two plots mention moss.', ts: 4 },
+      { role: 'assistant', content: reply, ts: 5 }
+    ] })
+    dispose = register(mock.api)
+    const store = getStore(mock.api)
+    await store.whenReady
+    await store.openChat('canopy')
+    const views = new Map(vi.mocked(mock.api.registerView).mock.calls)
+    const Sidebar = views.get(config.uiSlots.right_sidebar) as React.ComponentType
+    const Main = views.get(config.uiSlots.main_workspace) as React.ComponentType<MainWorkspaceViewProps>
+    for (const view of [render(<Sidebar />), render(<Main navigation={{ setController: vi.fn() }} />)]) {
+      await act(async () => {})
+      const prose = [...view.container.querySelectorAll('.assistant-msg .markdown-body')]
+      expect(prose.map(element => element.textContent)).toEqual(['Which mosses grow here?', 'Surveying the plots.', expect.stringContaining('Two plots hold Sphagnum.')])
+      for (const element of prose) expect(element).toHaveClass('assistant-message-markdown')
+      const group = view.container.querySelector<HTMLDetailsElement>('.assistant-activity-group')!
+      await act(async () => { group.open = true; fireEvent(group, new Event('toggle')) })
+      const commentary = within(group).getByText('Two plots mention moss.').closest('.markdown-body')!
+      expect(commentary.closest('.assistant-activity-commentary')).not.toBeNull()
+      expect(commentary).not.toHaveClass('assistant-message-markdown')
+      const tool = group.querySelector('.assistant-activity')!
+      expect(tool.querySelector('.assistant-activity-output')).toHaveTextContent('{"hits":2}')
+      expect(tool.querySelector('.markdown-body')).toBeNull()
+      expect(group.querySelector('.assistant-message-markdown')).toBeNull()
+      view.unmount()
+    }
+    const classes = new Map(markdown.mock.calls.map(([props]) => [props.value, props.className]))
+    expect(Object.fromEntries(classes)).toEqual({ 'Which **mosses** grow here?': 'assistant-message-markdown', 'Surveying the plots.': 'assistant-message-markdown', 'Two plots mention moss.': undefined, [reply]: 'assistant-message-markdown' })
+
+    const sheet = (document.getElementById('assistant-plugin-styles') as HTMLStyleElement).sheet!
+    const rules = [...sheet.cssRules].filter((rule): rule is CSSStyleRule => 'selectorText' in rule)
+    const declarations = (selector: string) => {
+      const { style } = rules.find(rule => rule.selectorText === selector)!
+      return Object.fromEntries(Array.from({ length: style.length }, (_, index) => [style[index], style.getPropertyValue(style[index]).trim()]))
+    }
+    expect(declarations('.md-embedded.assistant-message-markdown :is(.md-note, .markdown-body)')).toEqual({
+      '--md-note-font': 'var(--markdown-font, var(--body-font))',
+      '--md-note-size': 'var(--markdown-size, var(--text-font-size))',
+      '--md-note-line': 'var(--markdown-line-height, 1.65)',
+      '--md-block-gap': 'var(--markdown-paragraph-spacing, 1em)',
+      '--md-heading-gap': 'var(--markdown-heading-spacing, 1em)',
+      ...Object.fromEntries(['heading-spacing', 'h1-size', 'h2-size', 'h3-size', 'h4-size', 'h5-size', 'h6-size', 'mono-size', 'inline-code-size', 'table-size'].map(name => [`--markdown-${name}`, 'unset']))
+    })
+    expect(declarations('.md-embedded.assistant-message-markdown .md-reading')).toEqual({ 'font-family': 'var(--md-note-font)', 'font-size': 'var(--md-note-size)', 'line-height': 'var(--md-note-line)' })
+    expect(declarations('.assistant-bubble.assistant-streaming')).toEqual({ 'font-family': 'var(--markdown-font, var(--body-font))', 'font-size': 'var(--markdown-size, var(--text-font-size))', 'line-height': 'var(--markdown-line-height, 1.65)' })
+    expect(rules.filter(rule => rule.selectorText.includes('.md-embedded')).every(rule => rule.selectorText.includes('.assistant-message-markdown'))).toBe(true)
+  })
+
   it('switches between project navigation and searchable date groups with saved time mode', async () => {
     const mock = createMockValleyApi({ manifest: { id: 'assistant' } })
     const now = new Date(), yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12)

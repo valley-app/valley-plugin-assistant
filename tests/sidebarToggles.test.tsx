@@ -186,6 +186,39 @@ it('renders complete message Markdown before clipping a shortened sidebar summar
 })
 
 
+it('leaves the backend request bound to the loading store while a long chronological list reads its previews', async () => {
+  const mock = createMockValleyApi({ settings: { sidebarChronological: true } })
+  for (let index = 0; index < 150; index++) mock.chatThreads.set(`fern-${index}`, { ...thread(`fern-${index}`, `Fern survey ${index}`), updatedAt: 1 + index, messages: [{ role: 'assistant', content: `Fern count ${index}` }] })
+  mock.api.backend.call = vi.fn(async () => []) as typeof mock.api.backend.call
+  // The Assistant backend admits 64 window requests at once and refuses the next one as busy (src/backend/index.ts accepted()).
+  let inFlight = 0, reading = 0, readPeak = 0
+  const admit = async <T,>(run: () => Promise<T>): Promise<T | { ok: false; error: string }> => {
+    if (inFlight >= 64) return { ok: false, error: 'Too many Assistant requests are pending' }
+    inFlight++
+    try { await new Promise(resolve => setTimeout(resolve, 5)); return await run() } finally { inFlight-- }
+  }
+  const readChat = mock.api.assistant.readChat, listPending = mock.api.assistant.listPending
+  const reads = vi.spyOn(mock.api.assistant, 'readChat').mockImplementation(id => admit(async () => {
+    readPeak = Math.max(readPeak, ++reading)
+    try { return await readChat(id) } finally { reading-- }
+  }) as ReturnType<typeof readChat>)
+  vi.spyOn(mock.api.assistant, 'listPending').mockImplementation(() => admit(listPending) as ReturnType<typeof listPending>)
+  vi.spyOn(mock.api.markdown, 'render').mockImplementation(async text => text)
+  initRuntime(mock.api)
+  const store = getStore(mock.api)
+  let loaded: unknown = 'pending'
+  void store.whenReady.then(() => { loaded = null }, (error: unknown) => { loaded = error })
+  const view = render(<Panel />)
+  await waitFor(() => expect(new Set(reads.mock.calls.map(([id]) => id)).size).toBe(150), { timeout: 5000 })
+  await waitFor(() => expect(loaded).not.toBe('pending'))
+  expect(loaded).toBeNull()
+  expect(store.getSnapshot()).toMatchObject({ ready: true, error: null, active: { id: 'fern-149' } })
+  await waitFor(() => expect(reading).toBe(0))
+  expect(view.container.querySelectorAll('.assistant-thread-preview')).toHaveLength(150)
+  expect(readPeak).toBeLessThanOrEqual(5)
+  await act(async () => { await expect(store.prepareUnload()).resolves.toBeUndefined() })
+})
+
 it('collapses and reopens Recents without opening a different chat', async () => {
   const mock = await mountPanel({})
   const open = vi.spyOn(getStore(mock.api), 'openChat')

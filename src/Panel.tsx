@@ -73,12 +73,22 @@ function previewNodes(nodes: NodeListOf<ChildNode>): React.ReactNode[] {
   })
 }
 
+// Every preview row reads its whole conversation; a long list must not fill the backend's shared request bound while the store loads.
+const PREVIEW_READS = 4
+const previewWaiters: Array<() => void> = []
+let previewReads = 0
+async function previewRead<T>(read: () => Promise<T>): Promise<T> {
+  while (previewReads >= PREVIEW_READS) await new Promise<void>(resolve => previewWaiters.push(resolve))
+  previewReads++
+  try { return await read() } finally { previewReads--; previewWaiters.shift()?.() }
+}
+
 const ThreadPreview: FC<{ threadId: string; content: string; updatedAt: number }> = ({ threadId, content, updatedAt }) => {
   const [rendered, setRendered] = React.useState<{ source: string; nodes: React.ReactNode[] }>()
   React.useEffect(() => {
     let live = true
     void (async () => {
-      const result = await api.assistant.readChat(threadId).catch(() => undefined)
+      const result = await previewRead(async () => live ? api.assistant.readChat(threadId) : undefined).catch(() => undefined)
       if (!live) return
       const message = result?.data?.thread?.messages.slice().reverse().find(message => ['user', 'assistant'].includes(message.role) && message.content.trim() && !message.toolCalls?.length)
       const html = await api.markdown.render(message?.displayContent || message?.content || content, { breaks: true })

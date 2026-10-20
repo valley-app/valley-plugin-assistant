@@ -239,9 +239,9 @@ const WorkDisclosure: FC<{ summary: React.ReactNode; children: React.ReactNode }
   </details>
 }
 
-const BubbleContent: FC<{ content: string }> = ({ content }) => (
+const BubbleContent: FC<{ content: string; className?: string }> = ({ content, className }) => (
   <div className="assistant-bubble-md">
-    <api.ui.MarkdownView value={content} context={{}} />
+    <api.ui.MarkdownView value={content} context={{}} className={className} />
   </div>
 )
 
@@ -298,7 +298,7 @@ const MessageRow: FC<{ message: AiMessage; showMeta?: boolean; copyText?: string
   return (
     <div className={`assistant-msg ${mine ? 'mine' : 'theirs'}`}>
       <MessageAttachments files={message.attachmentFiles} />
-      {content && (message.error ? <ErrorNotice error={content} /> : <div className="assistant-bubble"><BubbleContent content={content} /></div>)}
+      {content && (message.error ? <ErrorNotice error={content} /> : <div className="assistant-bubble"><BubbleContent content={content} className="assistant-message-markdown" /></div>)}
       {showMeta && <MessageMeta content={copyText ?? content} ts={message.ts} showTime={showTime} />}
     </div>
   )
