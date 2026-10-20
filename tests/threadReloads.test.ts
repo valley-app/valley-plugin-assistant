@@ -38,4 +38,20 @@ describe('event-driven chat list reloads', () => {
     expect(listChats.mock.calls.length).toBeLessThanOrEqual(3)
     expect(store.getSnapshot().error).toBeNull()
   })
+
+  it('walks every chat page into one newest-first list', async () => {
+    const backend = sessionBackendFixture(); fixtures.push(backend)
+    const store = getStore(backend.api)
+    await store.whenReady
+    const chats = Array.from({ length: 3000 }, (_, index) => ({ id: `chat-fern-${index}`, title: `Fern plot ${index}`, updatedAt: (index * 7919) % 3001 }))
+    const listChats = vi.spyOn(backend.api.assistant, 'listChats').mockImplementation(async cursor => {
+      const start = cursor ? Number(cursor) : 0, end = Math.min(start + 200, chats.length)
+      return { ok: true, data: { chats: chats.slice(start, end), ...(end < chats.length ? { cursor: String(end) } : {}) } }
+    })
+    await store.reloadThreads()
+    expect(listChats.mock.calls.map(([cursor]) => cursor)).toEqual([undefined, ...Array.from({ length: 14 }, (_, index) => String((index + 1) * 200))])
+    const threads = store.getSnapshot().threads
+    expect(threads).toHaveLength(3000)
+    expect(threads.map(thread => thread.updatedAt)).toEqual([...chats.map(chat => chat.updatedAt)].sort((a, b) => b - a))
+  })
 })

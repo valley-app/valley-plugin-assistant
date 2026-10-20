@@ -8,6 +8,7 @@ import type { AiChatThread } from '../src/types'
 
 
 
+import { CHAT_PAGE_SIZE, listChatPage } from '../src/backend/threads'
 import {
   deleteChat,
   ensureScaffold,
@@ -223,3 +224,40 @@ it.each(['telegram', 'whatsapp'] as const)('preserves %s identity and last-chat 
   await renameChat(root, original.id, 'Moon research')
   expect(await listChats(root)).toContainEqual(expect.objectContaining({ title: 'Moon research', channelIdentity: 'Field bot · Fern', updatedAt: 2 }))
 })
+
+it('lists 3,000 chats as bounded summary pages without message bodies', async () => {
+  const chats = join(root, '.valley', 'plugins', 'data', 'assistant', 'chats')
+  const body = 'Lichen and moss share the north face of the boulder; '.repeat(20)
+  const write = async (index: number) => {
+    const id = `chat-moss-${String(index).padStart(4, '0')}`, dir = join(chats, id)
+    const messages = Array.from({ length: 12 }, (_, turn) => ({ role: turn % 2 ? 'assistant' : 'user', content: `${body}${index}-${turn}` }))
+    const legacy = index % 500 === 0, empty = index % 997 === 0
+    await fs.mkdir(dir, { recursive: true })
+    await fs.writeFile(join(dir, 'settings.json'), JSON.stringify({ id, title: `Moss survey ${index}`, createdAt: index, updatedAt: index, ...(legacy ? {} : { messageCount: empty ? 0 : messages.length, preview: `Survey ${index}` }) }))
+    await fs.writeFile(join(dir, 'thread.jsonl'), empty ? '' : messages.map(message => JSON.stringify(message)).join('\n'))
+    return empty ? [] : [id]
+  }
+  const expected: string[] = []
+  for (let start = 0; start < 3000; start += 250) expected.push(...(await Promise.all(Array.from({ length: 250 }, (_, offset) => write(start + offset)))).flat())
+  const seen: string[] = []
+  let cursor: string | undefined, pages = 0, total = 0
+  do {
+    const page = await listChatPage(root, cursor ? { cursor } : {})
+    const bytes = new TextEncoder().encode(JSON.stringify(page)).byteLength
+    expect(page.chats.length).toBeLessThanOrEqual(CHAT_PAGE_SIZE)
+    expect(bytes).toBeLessThan(128 * 1024)
+    for (const chat of page.chats) {
+      expect(chat).not.toHaveProperty('messages')
+      expect(chat.preview!.length).toBeLessThanOrEqual(240)
+    }
+    seen.push(...page.chats.map(chat => chat.id))
+    total += bytes; pages++; cursor = page.cursor
+  } while (cursor)
+  expect(pages).toBe(Math.ceil(expected.length / CHAT_PAGE_SIZE))
+  expect(total).toBeLessThan(2 * 1024 * 1024)
+  expect(seen.sort()).toEqual(expected.sort())
+  const all = await listChats(root)
+  expect(all.map(chat => chat.id).sort()).toEqual(expected)
+  expect(new TextEncoder().encode(JSON.stringify({ chats: all })).byteLength).toBeLessThan(2 * 1024 * 1024)
+  expect(all.find(chat => chat.id === 'chat-moss-0500')!.preview).toBe(`${body}500-11`.slice(0, 240).trim())
+}, 120000)

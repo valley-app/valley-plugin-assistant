@@ -10,7 +10,7 @@ import path from 'path-browserify'
 import type { AiChatSummary, AiChatSource, AiChatThread, AiMessage, AiProviderId, CustomCommand } from '../types'
 import type { GuardOverrides } from '@valley/plugin-sdk/guard/types'
 import { atomicWriteFile } from './filesystem'
-import { chatDir, chorusChannelsDir, chorusChatsDir, isSafeName, safeSegment } from './paths'
+import { chatDir, chorusChannelsDir, chorusChatsDir, chorusDir, isSafeName, safeSegment } from './paths'
 import { queuedWriteJson, runExclusive } from './fileQueue'
 import { readJson, readText } from './repositoryFiles'
 import { normalizeCommands } from './commandConfig'
@@ -202,52 +202,74 @@ export async function resolveChatDir(vaultRoot: string, id: string, api: OwnerAp
   return null
 }
 
-export async function listChats(vaultRoot: string, includeEmpty = false, api: OwnerApi = backendApi()): Promise<AiChatSummary[]> {
-  const byId = new Map<string, AiChatSummary>()
-  const add = async (meta: ChatMeta, dir: string): Promise<void> => {
-    if (!includeEmpty && !(meta.messageCount ?? (await readThreadMessages(dir, api)).length) && !meta.pendingMessages?.length) return
-    // Emit `model`/`profileId` only when set — an explicit `null`/`undefined`
-    // would change object identity for equality-based consumers.
-    const summary: AiChatSummary = { id: meta.id, title: meta.title, updatedAt: meta.updatedAt }
-    const preview = meta.preview ?? messagePreview(await readThreadMessages(dir, api))
-    if (preview) summary.preview = preview
-    if (meta.projectId) summary.projectId = meta.projectId
-    if (meta.harness) summary.harness = meta.harness
-    if (meta.model) summary.model = meta.model
-    if (meta.profileId) summary.profileId = meta.profileId
-    if (meta.source) summary.source = meta.source
-    if (meta.channelId) summary.channelId = meta.channelId
-    if (meta.channelName) summary.channelName = meta.channelName
-    if (meta.channelIdentity) summary.channelIdentity = meta.channelIdentity
-    if (meta.commands?.length) summary.commands = meta.commands
-    if (meta.pinned) summary.pinned = true
-    byId.set(meta.id, summary)
-  }
-  // App chats: one folder each under Chats/.
+async function chatSummary(dir: string, includeEmpty: boolean, api: OwnerApi): Promise<AiChatSummary | null> {
+  const meta = await readMeta(dir, api)
+  if (!meta) return null
+  let messages: AiMessage[] | undefined
+  const thread = async (): Promise<AiMessage[]> => messages ??= await readThreadMessages(dir, api)
+  if (!includeEmpty && !(meta.messageCount ?? (await thread()).length) && !meta.pendingMessages?.length) return null
+  // Emit `model`/`profileId` only when set — an explicit `null`/`undefined`
+  // would change object identity for equality-based consumers.
+  const summary: AiChatSummary = { id: meta.id, title: meta.title, updatedAt: meta.updatedAt }
+  const preview = meta.preview ?? messagePreview(await thread())
+  if (preview) summary.preview = preview
+  if (meta.projectId) summary.projectId = meta.projectId
+  if (meta.harness) summary.harness = meta.harness
+  if (meta.model) summary.model = meta.model
+  if (meta.profileId) summary.profileId = meta.profileId
+  if (meta.source) summary.source = meta.source
+  if (meta.channelId) summary.channelId = meta.channelId
+  if (meta.channelName) summary.channelName = meta.channelName
+  if (meta.channelIdentity) summary.channelIdentity = meta.channelIdentity
+  if (meta.commands?.length) summary.commands = meta.commands
+  if (meta.pinned) summary.pinned = true
+  return summary
+}
+
+/** App chat folders (Chats/<id>/), then remote-channel chat folders (Channels/<channelId>/<chatRef>/). */
+async function chatFolders(vaultRoot: string, api: OwnerApi): Promise<string[]> {
+  const folders: string[] = []
   try {
-    for (const d of await fs.readdir(chorusChatsDir(vaultRoot), { withFileTypes: true }, api)) {
-      if (!d.isDirectory()) continue
-      const meta = await readMeta(path.join(chorusChatsDir(vaultRoot), d.name), api)
-      if (meta) await add(meta, path.join(chorusChatsDir(vaultRoot), d.name))
-    }
+    for (const d of await fs.readdir(chorusChatsDir(vaultRoot), { withFileTypes: true }, api)) if (d.isDirectory()) folders.push(path.join(chorusChatsDir(vaultRoot), d.name))
   } catch {
     /* no app chats yet */
   }
-  // Remote-channel chats: Channels/<channelId>/<chatRef>/.
   try {
     for (const ch of await fs.readdir(chorusChannelsDir(vaultRoot), { withFileTypes: true }, api)) {
       if (!ch.isDirectory()) continue
       const channelDir = path.join(chorusChannelsDir(vaultRoot), ch.name)
-      for (const ref of await fs.readdir(channelDir, { withFileTypes: true }, api)) {
-        if (!ref.isDirectory()) continue
-        const meta = await readMeta(path.join(channelDir, ref.name), api)
-        if (meta) await add(meta, path.join(channelDir, ref.name))
-      }
+      for (const ref of await fs.readdir(channelDir, { withFileTypes: true }, api)) if (ref.isDirectory()) folders.push(path.join(channelDir, ref.name))
     }
   } catch {
     /* no remote-channel chats yet */
   }
+  return folders
+}
+
+export async function listChats(vaultRoot: string, includeEmpty = false, api: OwnerApi = backendApi()): Promise<AiChatSummary[]> {
+  const byId = new Map<string, AiChatSummary>()
+  for (const dir of await chatFolders(vaultRoot, api)) {
+    const summary = await chatSummary(dir, includeEmpty, api).catch(() => null)
+    if (summary) byId.set(summary.id, summary)
+  }
   return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+export const CHAT_PAGE_SIZE = 200
+
+/** One page of non-empty chat summaries in folder order; `cursor` names the last folder read while more remain. */
+export async function listChatPage(vaultRoot: string, page: { limit?: number; cursor?: string } = {}, api: OwnerApi = backendApi()): Promise<{ chats: AiChatSummary[]; cursor?: string }> {
+  const base = chorusDir(vaultRoot)
+  const folders = (await chatFolders(vaultRoot, api)).map(dir => path.relative(base, dir)).sort()
+  const limit = page.limit ?? CHAT_PAGE_SIZE
+  const chats: AiChatSummary[] = []
+  let index = page.cursor === undefined ? 0 : folders.findIndex(folder => folder > page.cursor!)
+  if (index < 0) index = folders.length
+  for (; index < folders.length && chats.length < limit; index++) {
+    const summary = await chatSummary(path.join(base, folders[index]), false, api).catch(() => null)
+    if (summary) chats.push(summary)
+  }
+  return index < folders.length ? { chats, cursor: folders[index - 1] } : { chats }
 }
 
 export async function readChat(vaultRoot: string, id: string, api: OwnerApi = backendApi()): Promise<AiChatThread | null> {

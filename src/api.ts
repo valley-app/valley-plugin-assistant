@@ -57,7 +57,7 @@ export function createAssistantApi(api: HostApi): ValleyPluginApi {
         addPending: (record) => driverCall('ai', 'addPending', { record }),
         removePending: (requestId) => driverCall('ai', 'removePending', { requestId }),
         listPending: () => driverCall('ai', 'listPending', {}) as Promise<AiPendingResult>,
-        listChats: () => driverCall('ai', 'listChats', {}) as Promise<AiChatListResult>,
+        listChats: (cursor) => driverCall('ai', 'listChats', cursor ? { cursor } : {}) as Promise<AiChatListResult>,
         readChat: (id) => driverCall('ai', 'readChat', { id }) as Promise<AiChatThreadResult>,
         saveChat: (thread) => driverCall('ai', 'saveChat', { thread }),
         renameChat: (id, title) => driverCall('ai', 'renameChat', { id, title }),

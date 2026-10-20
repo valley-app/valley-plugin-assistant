@@ -3,7 +3,7 @@ import { t } from './runtime'
 import { z } from 'zod'
 import { startRun, cancelRun } from './exports'
 import { readCommandsSnapshot } from './store'
-import { appendMemory, clearChat, deleteChat, deletePersonality, listChats, listPersonalities, readChat, readCommands, readConfig, readGuardOverrides, readMemory, readPersonality, renameChat, saveChat, saveCommands, saveGuardOverrides, savePersonality, setChatPinned, writeRule } from './exports'
+import { appendMemory, clearChat, deleteChat, deletePersonality, listChatPage, listPersonalities, readChat, readCommands, readConfig, readGuardOverrides, readMemory, readPersonality, renameChat, saveChat, saveCommands, saveGuardOverrides, savePersonality, setChatPinned, writeRule } from './exports'
 import { ingestAttachment } from './exports'
 import { addPending, listPending, removePending } from './exports'
 import { backendApi } from './runtime'
@@ -318,7 +318,7 @@ export const aiDriver = defineDriver({
   // renders — which plugins ship presets, their applied/skipped state, and whether
   // a newer version needs review. The command/tool catalog itself is built
   // renderer-side (from getAllCommands + the assistant tool catalog).
-  listChats: defineDriverMethod(z.object({}).optional(), async (root) => ({ chats: await listChats(root) })),
+  listChats: defineDriverMethod(z.object({ limit: z.number().int().min(1).max(500).optional(), cursor: z.string().min(1).max(1024).optional() }).optional(), (root, payload) => listChatPage(root, payload ?? {})),
   readChat: defineDriverMethod(z.object({ id: z.string() }), async (root, payload) => ({ thread: await readChat(root, payload.id) })),
   saveChat: defineDriverMethod(z.object({ thread: chatThread }), (root, payload) => saveChat(root, payload.thread)),
   renameChat: defineDriverMethod(z.object({ id: z.string(), title: z.string() }), (root, payload) => renameChat(root, payload.id, payload.title)),

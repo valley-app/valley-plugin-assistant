@@ -44,7 +44,7 @@ export interface AiChatStartResult extends DriverResult {
 
 /** `DriverResult` whose `data` carries saved conversation summaries. */
 export interface AiChatListResult extends DriverResult {
-  data?: { chats: AiChatSummary[] }
+  data?: { chats: AiChatSummary[]; cursor?: string }
 }
 
 /** `DriverResult` whose `data` carries one full conversation thread. */
@@ -143,8 +143,8 @@ export interface AiDriver {
   removePending(requestId: string): Promise<DriverResult>
   /** Every persisted pending approval — recovered on launch to expire dead waits. */
   listPending(): Promise<AiPendingResult>
-  /** List saved conversation summaries (newest first). */
-  listChats(): Promise<AiChatListResult>
+  /** One page of saved conversation summaries; pass the returned `cursor` for the next page. */
+  listChats(cursor?: string): Promise<AiChatListResult>
   /** Read one full conversation thread. */
   readChat(id: string): Promise<AiChatThreadResult>
   /** Create/overwrite a conversation thread. */

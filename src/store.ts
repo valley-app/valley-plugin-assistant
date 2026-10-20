@@ -523,8 +523,14 @@ class AssistantStore {
       try {
         do {
           this.threadsStale = false
-          const res = await this.api.assistant.listChats()
-          this.state.threads = res.data?.chats ?? []
+          const threads = new Map<string, AiChatSummary>()
+          let cursor: string | undefined
+          do {
+            const res = await this.api.assistant.listChats(cursor)
+            for (const chat of res.data?.chats ?? []) threads.set(chat.id, chat)
+            cursor = res.data?.cursor
+          } while (cursor && !this.disposed)
+          this.state.threads = [...threads.values()].sort((a, b) => b.updatedAt - a.updatedAt)
           this.notify()
         } while (this.threadsStale && !this.disposed)
       } finally { this.threadsReload = undefined; this.threadsStale = false }
