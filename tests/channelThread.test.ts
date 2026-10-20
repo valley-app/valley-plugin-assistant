@@ -38,7 +38,20 @@ describe('backend-owned remote conversations', () => {
     expect(channelFixture.infer).toHaveBeenCalledTimes(2)
     const users = restored.coordinator.snapshot(failed.conversationId)!.thread!.messages.filter(message => message.role === 'user')
     expect(users.map(message => message.content)).toEqual(['hi', 'Describe the canopy'])
+    // The failed turn told the sender it failed; the fresh message got its own reply.
+    await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledTimes(2))
+    expect(JSON.stringify(channelFixture.dispatch.mock.calls[0])).toContain('This request failed and did not finish: Provider temporarily unavailable')
+  })
+
+  it('tells the Telegram sender in a plain reply when the turn fails, and shows the same reply in place of the error notice', async () => {
+    const { runtime } = createBackendChannelFixture()
+    channelFixture.infer.mockRejectedValueOnce(new Error('INVALID_INPUT: Invalid command input'))
+    const failed = await runtime.inbound('telegram', incoming())
+    await vi.waitFor(() => expect(runtime.coordinator.snapshot(failed.conversationId)?.state).toBe('FAILED'))
     await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledOnce())
+    expect(JSON.stringify(channelFixture.dispatch.mock.calls[0])).toContain('This request failed and did not finish: INVALID_INPUT: Invalid command input')
+    const snapshot = runtime.coordinator.snapshot(failed.conversationId)!
+    expect(snapshot.thread!.messages.at(-1)).toMatchObject({ role: 'assistant', error: true, failure: snapshot.error })
   })
 
   it.each(['FAILED', 'INTERRUPTED'] as const)('runs a new typed message after a restored %s turn without replay', async state => {

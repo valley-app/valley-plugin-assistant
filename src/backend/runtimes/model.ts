@@ -3,17 +3,23 @@ import type { AiChatRequest, AiMessage, AiStreamEvent, AiToolCall } from '../../
 export const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : []
 const text = (value: unknown): string => typeof value === 'string' ? value : ''
-function recoverInterruptedTools(messages: AiMessage[]): AiMessage[] {
-  const history: AiMessage[] = [], pending = new Map<string, AiToolCall>()
+export function recoverInterruptedTools(messages: AiMessage[]): AiMessage[] {
+  const history: AiMessage[] = [], pending = new Map<string, AiToolCall>(), held: AiMessage[] = []
+  const answered = new Set(messages.flatMap(message => message.role === 'tool' && message.toolCallId ? [message.toolCallId] : []))
+  const release = () => { history.push(...held); held.length = 0 }
   const flush = () => {
     for (const call of pending.values()) history.push({ role: 'tool', toolCallId: call.id, name: call.name, content: 'This tool execution was interrupted. Its outcome is unknown; check the current state before retrying.' })
     pending.clear()
+    release()
   }
   for (const message of messages) {
+    // A message a tool saved while running (a question, quiz item or plan) follows that tool's result: providers need results right after their call.
+    if (message.role !== 'tool' && !message.toolCalls?.length && [...pending.keys()].some(id => answered.has(id))) { held.push(message); continue }
     if (message.role !== 'tool') flush()
     history.push(message)
     if (message.role === 'tool' && message.toolCallId) pending.delete(message.toolCallId)
     for (const call of message.toolCalls ?? []) pending.set(call.id, call)
+    if (!pending.size) release()
   }
   flush()
   return history
@@ -24,7 +30,7 @@ export function deepseekMessage(value: unknown): AiMessage {
   const role = ['user', 'assistant', 'tool', 'system'].includes(text(message.role)) ? message.role as AiMessage['role'] : 'system'
   return { role, content: typeof message.content === 'string' ? message.content : blocks.filter(block => block.type === 'text').map(block => text(block.text)).join('\n'), ...(toolCalls.length ? { toolCalls } : {}), ...(message.toolCallId ? { toolCallId: text(message.toolCallId) } : {}) }
 }
-export async function bridgeModel(input: { params: Record<string, unknown>; request: AiChatRequest; context: PluginBackendOperationContext; send(value: unknown): Promise<void>; onText(text: string): void; onProgress?(): void; active: Map<string, string>; continuations?: Map<number, AiMessage['continuation']>; prepare?(request: AiChatRequest): Promise<AiChatRequest> }): Promise<void> {
+export async function bridgeModel(input: { params: Record<string, unknown>; request: AiChatRequest; context: PluginBackendOperationContext; send(value: unknown): Promise<void>; onText(text: string): void; onProgress?(event: AiStreamEvent): void; active: Map<string, string>; continuations?: Map<number, AiMessage['continuation']>; prepare?(request: AiChatRequest): Promise<AiChatRequest> }): Promise<void> {
   const { params, request, context, send } = input
   const body = params
   if (body.model !== request.model) throw new Error('Runtime requested a different model')
@@ -48,7 +54,7 @@ export async function bridgeModel(input: { params: Record<string, unknown>; requ
     context.cancellation.throwIfAborted()
     if (event.type === 'text') {
       if (!event.text) return
-      input.onProgress?.()
+      input.onProgress?.(event)
       if (textIndex < 0) {
         textIndex = index++
         await chunk({ type: 'block-start', index: textIndex, blockType: 'text' })
@@ -58,7 +64,7 @@ export async function bridgeModel(input: { params: Record<string, unknown>; requ
     } else if (event.type === 'tool_call') {
       if (emittedCalls.has(event.call.id)) return
       emittedCalls.add(event.call.id)
-      input.onProgress?.()
+      input.onProgress?.(event)
       const call: AiToolCall = event.call, position = index++, argumentsText = JSON.stringify(call.arguments)
       await chunk({ type: 'block-start', index: position, blockType: 'tool-call' })
       await chunk({ type: 'tool-call-delta', index: position, id: call.id, name: call.name, argumentsDelta: argumentsText })

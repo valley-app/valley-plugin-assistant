@@ -28,6 +28,7 @@ const provider = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
 const aiMessage = z.object({
   ingestionState: z.enum(['pending', 'complete']).optional(),
   voiceInput: z.boolean().optional(),
+  stopped: z.boolean().optional(),
   channelDeliveryId: z.string().max(1024).optional(),
   id: z.string().optional(),
   continuation: z.object({ provider: z.string().min(1).max(64), model: z.string().min(1).max(512), reasoningContent: z.string().max(4 * 1024 * 1024) }).strict().optional(),
@@ -243,13 +244,13 @@ export const aiDriver = defineDriver({
   readHarnessRun: defineDriverMethod(z.object({ runId: z.string().min(1) }), async (root, payload) => ({
     run: await readHarnessRun(root, payload.runId)
   })),
-  clearHarnessCache: defineDriverMethod(z.object({ id: harnessId }), async (root, payload) => {
-    await clearHarnessCache(root, payload.id)
+  clearHarnessCache: defineDriverMethod(z.object({ id: harnessId }), async (_root, payload) => {
+    await clearHarnessCache(payload.id)
     return { ok: true }
   }),
-  captureHarnessCache: defineDriverMethod(z.object({ id: harnessId }), (root, payload) => captureHarnessCache(root, payload.id)),
-  harnessCacheRevision: defineDriverMethod(z.object({ id: harnessId }), (root, payload) => harnessCacheRevision(root, payload.id)),
-  restoreHarnessCache: defineDriverMethod(z.object({ snapshot: z.unknown(), expectedRevision: z.string().length(64) }), async (root, payload) => { await restoreHarnessCache(root, payload.snapshot, payload.expectedRevision); return { ok: true } }),
+  captureHarnessCache: defineDriverMethod(z.object({ id: harnessId }), (_root, payload) => captureHarnessCache(payload.id)),
+  harnessCacheRevision: defineDriverMethod(z.object({ id: harnessId }), (_root, payload) => harnessCacheRevision(payload.id)),
+  restoreHarnessCache: defineDriverMethod(z.object({ snapshot: z.unknown(), expectedRevision: z.string().length(64) }), async (_root, payload) => { await restoreHarnessCache(payload.snapshot, payload.expectedRevision); return { ok: true } }),
   chat: defineDriverMethod(chatRequest, (root, payload) => {
       const req = payload
       void startRun(root, req)

@@ -98,7 +98,7 @@ export class ChannelReplyService {
     const result: ReplyDeliveryResult = { receipts: [], errors: [] }
     const thread = session.thread
     if (!thread?.channelId || !thread.chatRef || !['telegram', 'whatsapp'].includes(thread.source ?? '')) return result
-    const lastIndex = [...thread.messages].reverse().findIndex(message => message.role === 'assistant' && Boolean(message.id && message.content && !message.toolCalls?.length && !message.error))
+    const lastIndex = [...thread.messages].reverse().findIndex(message => message.role === 'assistant' && Boolean(message.id && message.content && !message.toolCalls?.length && (!message.error || message.failure)))
     const index = lastIndex < 0 ? -1 : thread.messages.length - 1 - lastIndex
     if (index < 0 || thread.messages.slice(index + 1).some(message => message.role === 'user')) return result
     const message = thread.messages[index], id = `reply:${thread.id}:${message.id}`

@@ -7,7 +7,7 @@ export function backendBuildOptions(root, outDir) {
   return {
     outfile: undefined,
     outdir: outDir,
-    entryPoints: { backend: path.join(root, 'src/backend/index.ts') },
+    entryPoints: { backend: path.join(root, 'src/backend/entry.ts') },
     splitting: true,
     chunkNames: 'backend-[name]-[hash]',
     plugins: [{

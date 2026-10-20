@@ -15,7 +15,7 @@ import type {
   HarnessSettingValue,
   HarnessTarget
 } from './harnessTypes'
-import { ASSISTANT_HARNESS_CACHE_DIR, ASSISTANT_HARNESS_DIR, ASSISTANT_HARNESS_RUNS_DIR, ASSISTANT_HARNESS_SETTINGS_FILE } from './backend/harness/paths'
+import { ASSISTANT_HARNESS_DIR, ASSISTANT_HARNESS_RUNS_DIR, ASSISTANT_HARNESS_SETTINGS_FILE } from './backend/harness/paths'
 const CodeEditor: typeof api.ui.CodeEditor = (props) => React.createElement(api.ui.CodeEditor, props)
 const iconForName = (name: string) => name === 'smart_toy' ? <LuBot /> : name === 'air' ? <LuWind /> : <LuFlaskConical />
 const Button: typeof api.ui.settings.Button = (props) => React.createElement(api.ui.settings.Button, props)
@@ -243,7 +243,7 @@ const HarnessDetail: FC<{ status: HarnessPackageStatus; onBack: () => void; onCh
         <span className="settings-list-glyph settings-list-glyph--lg">{iconForName(status.icon)}</span>
         <span className="settings-list-meta"><strong>{status.name}</strong><span className="settings-list-sub">{status.id} {uiText('auto.26c12f1ee6e3')}{status.version} · {status.ready ? uiText('auto.20c7c5522fc2') : uiText('auto.2b50ff807d04')}</span></span>
       </div>
-      <div className="harness-note">{uiText('harness.manualFiles', { settings: ASSISTANT_HARNESS_SETTINGS_FILE, runs: ASSISTANT_HARNESS_RUNS_DIR, cache: ASSISTANT_HARNESS_CACHE_DIR })}</div>
+      <div className="harness-note">{uiText('harness.manualFiles', { settings: ASSISTANT_HARNESS_SETTINGS_FILE, runs: ASSISTANT_HARNESS_RUNS_DIR })}</div>
       {status.updateAvailable && <div className="harness-warning">{uiText('auto.7da78a24b105')}</div>}
       {status.error && <div className="harness-error">{status.error}</div>}
       <Status pending={pending} />

@@ -167,6 +167,22 @@ describe.skipIf(process.platform !== 'darwin')('bundled DeepSeek with the Assist
     expect(activity.rows.at(-1)).toMatchObject({ name: harness, state: 'completed' })
     expect(listeners.size).toBe(0)
   }, 20000)
+  it('finishes its streaming text decoders after a completed and a crashed run', async () => {
+    // Like the Valley host, which keeps each unfinished streaming decoder and stops the backend at 128.
+    const open = new Set<TextDecoder>()
+    vi.stubGlobal('TextDecoder', class extends TextDecoder { override decode(input?: AllowSharedBufferSource, options?: TextDecodeOptions) { if (options?.stream) open.add(this); else open.delete(this); return super.decode(input, options) } })
+    try {
+      await runNativeRuntime(input(), context)
+      expect(open.size).toBe(0)
+      respond = false; toolSeen = false; requests = []
+      const running = runNativeRuntime(input(), context)
+      const outcome = expect(running).rejects.toThrow('Runtime exited')
+      await vi.waitFor(() => expect(toolSeen).toBe(true), { timeout: 10000 })
+      child!.kill('SIGKILL')
+      await outcome
+      expect(open.size).toBe(0)
+    } finally { vi.unstubAllGlobals() }
+  }, 20000)
   it('reports a runtime crash without leaving pending tool replies or event subscriptions', async () => {
     respond = false
     const running = runNativeRuntime(input(), context)

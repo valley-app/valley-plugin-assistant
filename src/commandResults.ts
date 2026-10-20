@@ -44,7 +44,7 @@ const model = object({ provider: text, id: text, label: text, tools: boolean, we
 export const assistantResults: Record<string, Record<string, unknown>> = {
   open: { type: 'null' }, 'new-chat': { type: 'null' }, ask: text,
   'providers-reload': object({ providers: list(object({ provider: text, name: text, description: text, icon: text, capabilities: list(text), configured: boolean, authMode: { enum: ['env', 'key', 'none'] }, authSources: object({ envKey: boolean, savedKey: boolean, savedKeyUnreadable: boolean, savedKeyUnchecked: boolean }, []), baseUrl: text, models: list(model) }, ['provider', 'configured', 'models'])) }),
-  'list-chats': summary, 'read-chat': thread, 'create-chat': thread, 'update-chat': thread, 'update-properties': thread, 'send-message': thread,
+  'list-chats': summary, 'read-chat': thread, 'create-chat': thread, 'update-chat': thread, 'update-properties': thread,
   'open-chat': object({ id: text }), 'clear-chat': object({ id: text, operation: { const: 'clear-chat' } }), 'delete-chat': object({ id: text, operation: { const: 'delete-chat' } }), 'stop-chat': object({ id: text, stopped: boolean }), 'read-memory': bound(result('readMemory')),
   'harness-list': harnesses, 'harness-reload': harnesses, 'harness-inspect': object({ package: nullable(object({ manifest, config: packageConfig, readOnly: boolean, files: list(object({ path: text, content: text, baseline: nullable(object({ mtimeMs: number, size: number, hash: text })) })) }, ['manifest', 'config', 'files'])), runs: list(run) }), 'harness-run': object({ run }), 'harness-cancel': object({ cancelled: boolean }), 'harness-history': object({ runs: list(run) }), 'harness-clear-cache': object({ ok: { const: true } })
 }

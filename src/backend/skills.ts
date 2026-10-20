@@ -45,7 +45,7 @@ export async function runSkill(root: string, runnable: string, args: Record<stri
   } catch (error) {
     if (truncated) return output.trim()
     throw error
-  } finally { off(); await api.files.release([file.handle]) }
+  } finally { off(); decoder.decode(); errorDecoder.decode(); await api.files.release([file.handle]) }
 }
 
 export async function toolboxRequest(payload: unknown): Promise<unknown> {

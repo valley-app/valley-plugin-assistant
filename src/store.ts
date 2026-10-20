@@ -16,7 +16,6 @@ import type {
   PermissionRequest
 } from '@valley/plugin-sdk/guard/types'
 import { isWriteFileOperation, PLATFORM_BLOCKED_PATHS } from '@valley/plugin-sdk/guard/types'
-import { assetUrlForRelPath, fileExtension } from '@valley/plugin-sdk/fileTypes'
 import { valleyCancellationOf } from '@valley/plugin-sdk/valleyCancellation'
 import { buildTools, type AgentTool, type InAppSurface } from './agent/tools'
 import { friendlyStreamError, runAgent } from './agent/loop'
@@ -95,6 +94,8 @@ export interface AssistantSnapshot {
   runningChatCount?: number
   voiceConversationId?: string
   busyChatIds?: string[]
+  unreadChatIds?: string[]
+  erroredChatIds?: string[]
   ready: boolean
   config: AssistantConfig | null
   threads: AiChatSummary[]
@@ -131,29 +132,6 @@ function titleFrom(text: string): string {
   return title + (title.length < t.length ? '…' : '') || 'New chat'
 }
 
-/** Base64-encode bytes in chunks (avoids a stack overflow on a large image). */
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  return btoa(binary)
-}
-
-function imageMime(path: string): string {
-  switch (fileExtension(path)) {
-    case '.png':
-      return 'image/png'
-    case '.gif':
-      return 'image/gif'
-    case '.webp':
-      return 'image/webp'
-    case '.svg':
-      return 'image/svg+xml'
-    default:
-      return 'image/jpeg'
-  }
-}
-
 interface StableState {
   ready: boolean
   config: AssistantConfig | null
@@ -186,6 +164,9 @@ class AssistantStore {
   private processingMessages = new Set<string>()
   private pausedMessages = new Set<string>()
   private stoppedChats = new Set<string>()
+  /** Chats whose turn ended while another chat was open: blue dot until opened; red when it ended in an error. */
+  private unreadChats = new Set<string>()
+  private erroredChats = new Set<string>()
   private editingMessages = new Set<string>()
   private unsavedThreads = new Map<string, AiChatThread>()
   private configRefresh: Promise<void> | undefined
@@ -196,6 +177,10 @@ class AssistantStore {
   private failedThreads = new Set<string>()
   private preparing = false
   private disposed = false
+  private threadsReload?: Promise<void>
+  private threadsStale = false
+  private changedChats = new Set<string>()
+  private changedChatsRun?: Promise<void>
   private unloadPreparation: Promise<void> | null = null
   private configurationLoaded = false
   private initializationPending = false
@@ -253,21 +238,25 @@ class AssistantStore {
     })
     this.offSessions = api.backend.on('session.changed', value => this.acceptSession((value as { session: SessionSnapshot }).session))
     this.offBackendErrors = [
-      api.backend.on('delivery.error', value => { const event = value as { conversationId: string; error: string }; this.deliveryErrors.set(event.conversationId, event.error); this.notify() }),
+      api.backend.on('delivery.error', value => { const event = value as { conversationId: string; error: string }; this.deliveryErrors.set(event.conversationId, event.error); if (this.state.active?.id !== event.conversationId) this.erroredChats.add(event.conversationId); this.notify() }),
       api.backend.on('configuration.error', value => { const event = value as { path: string; message: string }; this.state.error = `${event.path}: ${event.message}`; this.notify() }),
       api.backend.on('backendError', value => { this.state.error = String(value); this.notify() })
     ]
     this.offConversations = api.backend.on('conversations.changed', value => {
-      const id = (value as { id: string }).id
-      void (async () => {
-        const result = await api.assistant.readChat(id), thread = result.data?.thread
-        if (this.disposed || !thread?.id) return
-        const title = { title: thread.title, titleOrigin: thread.titleOrigin, titleRevision: thread.titleRevision }
-        if (this.state.active?.id === id) Object.assign(this.state.active, title)
-        const session = this.sessions.get(id)
-        if (session?.thread) Object.assign(session.thread, title)
+      this.changedChats.add((value as { id: string }).id)
+      if (this.changedChatsRun) return
+      // One readChat at a time; a burst of changes to the same chat is read once.
+      this.changedChatsRun = (async () => {
+        for (let id = this.nextChangedChat(); id && !this.disposed; id = this.nextChangedChat()) {
+          const result = await api.assistant.readChat(id), thread = result.data?.thread
+          if (this.disposed || !thread?.id) continue
+          const title = { title: thread.title, titleOrigin: thread.titleOrigin, titleRevision: thread.titleRevision }
+          if (this.state.active?.id === id) Object.assign(this.state.active, title)
+          const session = this.sessions.get(id)
+          if (session?.thread) Object.assign(session.thread, title)
+        }
         await this.reloadThreads()
-      })().catch(error => { this.state.error = String(error); this.notify() })
+      })().catch(error => { this.changedChats.clear(); this.state.error = String(error); this.notify() }).finally(() => { this.changedChatsRun = undefined })
     })
     this.offConfiguration = api.settings.subscribe(() => {
       if (!this.configurationLoaded && this.initializationError && !this.initializationPending && !this.preparing && !this.disposed) {
@@ -279,7 +268,13 @@ class AssistantStore {
 
   private acceptSession(session: SessionSnapshot): void {
     if (this.disposed || (this.sessions.get(session.conversationId)?.revision ?? -1) > session.revision) return
+    const previous = this.sessions.get(session.conversationId)
     this.sessions.set(session.conversationId, session)
+    const settled = (value: SessionSnapshot) => ['IDLE', 'FAILED', 'INTERRUPTED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)
+    if (previous && !settled(previous) && settled(session) && this.state.active?.id !== session.conversationId) {
+      if (session.state === 'FAILED' || session.state === 'INTERRUPTED' && session.error) this.erroredChats.add(session.conversationId)
+      else this.unreadChats.add(session.conversationId)
+    }
     if (session.thread && this.state.active?.id === session.conversationId) this.state.active = { ...session.thread, pendingMessages: session.queue.map(turn => ({ id: turn.id, text: turn.text, attachments: turn.attachments })) }
     if (!['IDLE', 'FAILED', 'INTERRUPTED'].includes(session.state)) this.deliveryErrors.delete(session.conversationId)
     if (['IDLE', 'FAILED', 'AWAITING_QUESTION', 'INTERRUPTED'].includes(session.state)) void this.reloadThreads().catch(() => {})
@@ -373,6 +368,8 @@ class AssistantStore {
       sessionState: session?.state,
       runningChatCount: new Set([...this.sessions.values()].filter(value => !['IDLE', 'FAILED', 'INTERRUPTED', 'QUEUED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)).map(value => value.conversationId).concat([...this.runs.keys()])).size,
       voiceConversationId: this.voiceConversationId,
+      unreadChatIds: [...this.unreadChats],
+      erroredChatIds: [...this.erroredChats],
       busyChatIds: [...new Set([...this.sessions.values()].filter(isSessionBusy).map(value => value.conversationId).concat([...this.runs.keys()], [...this.processingMessages], [...this.admissions.keys()]))],
       ready: this.state.ready,
       config: this.state.config,
@@ -435,7 +432,7 @@ class AssistantStore {
         if (this.dirtyThreads.get(thread.id) === snapshot) this.dirtyThreads.delete(thread.id)
       } catch (error) {
         if (this.dirtyThreads.get(thread.id) === snapshot) this.failedThreads.add(thread.id)
-        this.state.error = error instanceof Error ? error.message : String(error)
+        this.conversationErrors.set(thread.id, error instanceof Error ? error.message : String(error))
         throw error
       }
     })()
@@ -518,10 +515,26 @@ class AssistantStore {
     return this.configRefresh
   }
 
-  async reloadThreads(): Promise<void> {
-    const res = await this.api.assistant.listChats()
-    this.state.threads = res.data?.chats ?? []
-    this.notify()
+  /** One listChats at a time: requests made while it runs share a single later reload, so event bursts cannot pile up
+   *  page calls past the UI channel limit, and every caller still sees a list read after its request. */
+  reloadThreads(): Promise<void> {
+    if (this.threadsReload) { this.threadsStale = true; return this.threadsReload }
+    const reload = async (): Promise<void> => {
+      try {
+        do {
+          this.threadsStale = false
+          const res = await this.api.assistant.listChats()
+          this.state.threads = res.data?.chats ?? []
+          this.notify()
+        } while (this.threadsStale && !this.disposed)
+      } finally { this.threadsReload = undefined; this.threadsStale = false }
+    }
+    return this.threadsReload = reload()
+  }
+  private nextChangedChat(): string | undefined {
+    const id = this.changedChats.values().next().value
+    if (id !== undefined) this.changedChats.delete(id)
+    return id
   }
 
   /** A new in-app chat, seeded from the Chat settings' defaults for new chats. */
@@ -560,6 +573,7 @@ class AssistantStore {
 
   async openChat(id: string, recordHistory = true): Promise<boolean> {
     if (id !== this.state.active?.id) this.voiceConversationId = undefined
+    this.unreadChats.delete(id); this.erroredChats.delete(id)
     if (recordHistory) this.hasUserSelection = true
     // If this thread is mid-run, show the live in-memory copy (stays in sync).
     const session = this.sessions.get(id)
@@ -684,7 +698,7 @@ class AssistantStore {
     if (!this.state.active || this.runs.has(this.state.active.id)) return
     this.state.active.reasoningEffort = effort
     this.notify()
-    void this.saveThread(this.state.active).catch(error => { this.state.error = String(error); this.notify() })
+    void this.saveThread(this.state.active).catch(() => this.notify())
   }
 
   setModelOverride(model: { provider: AiProviderId; model: string; connectionId?: string } | null): void {
@@ -692,7 +706,7 @@ class AssistantStore {
       this.state.active.model = model
       if (!supportedEfforts(model, this.state.config?.connections).includes(this.state.active.reasoningEffort!)) this.state.active.reasoningEffort = undefined
       this.notify()
-      void this.saveThread(this.state.active).catch(error => { this.state.error = String(error); this.notify() })
+      void this.saveThread(this.state.active).catch(() => this.notify())
     }
   }
 
@@ -772,25 +786,13 @@ class AssistantStore {
     void this.api.assistant.appendGuardAudit(entry).catch(() => {})
   }
 
-  // ── Dangerous mode ───────────────────────────────────────────────────────
-
-  /** Set the global default-write decision (Claude-style persistent permission toggle). */
-  async setDefaultWrite(decision: GuardDecision): Promise<void> {
-    const cfg = this.state.config
-    if (!cfg) return
-    const guard = { ...cfg.guard, defaultWrite: { ...cfg.guard.defaultWrite, decision } }
-    this.state.config = { ...cfg, guard }
-    this.notify()
-    await this.api.assistant.saveGuard(guard)
-  }
-
   interruptVoice(): void {
     if (this.state.active) void this.api.backend.call('session.interruptVoice', { conversationId: this.state.active.id })
   }
 
   // Sealed test fixtures only (sealedTestCommands.ts): drops the renderer copy of a session the backend already forgot.
   async forgetSession(id: string): Promise<void> {
-    this.sessions.delete(id); this.stoppedChats.delete(id); this.pausedMessages.delete(id); this.deliveryErrors.delete(id)
+    this.sessions.delete(id); this.unreadChats.delete(id); this.erroredChats.delete(id); this.stoppedChats.delete(id); this.pausedMessages.delete(id); this.deliveryErrors.delete(id)
     await this.reloadThreads()
     if (this.state.active?.id === id) await this.openChat(id, false)
     this.notify()
@@ -809,9 +811,9 @@ class AssistantStore {
     this.notify()
   }
 
-  async startPlanning(): Promise<void> {
-    if (!this.state.active || this.state.active.source) this.newChat()
-    const thread = this.state.active!
+  async startPlanning(target?: AiChatThread): Promise<void> {
+    if (!target && (!this.state.active || this.state.active.source)) this.newChat()
+    const thread = target ?? this.state.active!
     if (this.runs.has(thread.id) || this.processingMessages.has(thread.id)) throw new Error(uiText('assistant.plan.wait'))
     thread.mode = 'plan'
     if (this.sessions.has(thread.id)) await this.api.backend.call('session.mode', { conversationId: thread.id, mode: 'plan' })
@@ -841,8 +843,9 @@ class AssistantStore {
     admissions.add(controller); this.admissions.set(thread.id, admissions); this.notify()
     return this.trackWork(admitTurn(async admission => {
       await admission.step('loading conversation settings', () => this.whenReady)
-      if (text.trim() === '/plan') { await this.startPlanning(); return }
-      if (text.trim() === '/clear') { await this.clearActive(); return }
+      if (text.trim() === '/plan') { await this.startPlanning(thread); return }
+      // /clear stops this chat's other admissions, never the one carrying the /clear itself.
+      if (text.trim() === '/clear') { admissions.delete(controller); await this.clearActive(thread); return }
       if (!thread.messages.length && thread.titleOrigin !== 'manual') { thread.title = titleFrom(text.trim() || attachments?.map(item => item.fileName).join(', ') || 'New chat'); thread.titleOrigin = 'fallback' }
       const session = await admission.step('submitting the instruction', () => this.api.backend.callOperation<SessionSnapshot>('session.submit', transportValue({ id: submissionId, conversationId: thread.id, text: text.trim(), attachments, thread, origin }), { cancellation: valleyCancellationOf(controller) }))
       this.unsavedThreads.delete(thread.id)
@@ -890,7 +893,7 @@ class AssistantStore {
         } catch (error) {
           if (thread.messages.length === before) thread.pendingMessages.unshift(item)
           this.pausedMessages.add(thread.id)
-          this.state.error = error instanceof Error ? error.message : String(error)
+          this.conversationErrors.set(thread.id, error instanceof Error ? error.message : String(error))
           if (!this.failedThreads.has(thread.id)) await this.saveThread(thread)
         }
       }
@@ -950,55 +953,21 @@ class AssistantStore {
     try {
       const session = await this.api.backend.call<SessionSnapshot>('session.channelSend', { id: crypto.randomUUID(), conversationId: thread.id, text: trimmed })
       this.acceptSession(session)
-      this.state.error = null
+      this.conversationErrors.delete(thread.id)
       await this.reloadThreads()
     } catch (error) {
-      this.state.error = error instanceof Error ? error.message : String(error)
+      this.conversationErrors.set(thread.id, error instanceof Error ? error.message : String(error))
     }
     this.notify()
   }
 
   /**
-   * A tapped quiz answer button. Sends the choice value as the user's reply and
-   * attaches the question image so a vision model can grade a letter tap (the
-   * option→letter mapping lives only in the image). For a remote mirror thread
-   * the turn runs with channel origin, so the bot's reply also reaches the channel.
+   * A tapped quiz answer button. Sends the choice value as the user's reply through
+   * the backend session, so its turn uses the single host approval path.
    */
   answerQuiz(value: string): Promise<void> {
     if (this.preparing || this.disposed) return Promise.resolve()
-    if (this.state.active?.quiz?.source.startsWith('assistant-question:')) return this.send(value)
-    return this.trackWork(this.runQuizAnswer(value))
-  }
-
-  private async runQuizAnswer(value: string): Promise<void> {
-    const thread = this.state.active
-    if (!thread || !thread.quiz || this.runs.has(thread.id)) return
-    const quiz = thread.quiz
-    const origin: TurnOrigin =
-      thread.source && thread.channelId && thread.chatRef
-        ? { channelId: thread.channelId, chatRef: thread.chatRef }
-        : 'ui'
-    let attachments: AiAttachment[] | undefined
-    if (quiz.imagePath) {
-      const att = await this.readImageAttachment(quiz.imagePath)
-      if (att) attachments = [att]
-    }
-    thread.quiz = null
-    this.notify()
-    await this.runTurn(thread, value, origin, attachments)
-  }
-
-  /** Fetch a vault image (via the asset protocol) as a base64 vision attachment, or null. */
-  private async readImageAttachment(ref: string): Promise<AiAttachment | null> {
-    try {
-      const rel = this.api.workspace.resolveWikilink(ref) ?? ref
-      const res = await fetch(assetUrlForRelPath(rel))
-      if (!res.ok) return null
-      const bytes = new Uint8Array(await res.arrayBuffer())
-      return { mime: imageMime(rel), dataBase64: bytesToBase64(bytes) }
-    } catch {
-      return null
-    }
+    return this.send(value)
   }
 
   /**
@@ -1102,7 +1071,7 @@ class AssistantStore {
     const run: ActiveRun = { thread, origin, requestId: null, phase: 'thinking', streamingText: '', cancelled: this.preparing || this.disposed || (origin === 'ui' && this.pausedMessages.has(thread.id)), controller: new AbortController(), awaitingApproval: false }
     if (run.cancelled) run.controller.abort()
     this.runs.set(thread.id, run)
-    this.state.error = null
+    this.conversationErrors.delete(thread.id)
     this.notify()
 
     let lastAssistant = ''
@@ -1176,7 +1145,7 @@ class AssistantStore {
           this.notify()
         },
         onMessage: (msg) => {
-          if (msg.error) { this.pausedMessages.add(thread.id); this.state.error = msg.content }
+          if (msg.error) { this.pausedMessages.add(thread.id); this.conversationErrors.set(thread.id, msg.content) }
           thread.messages.push(msg)
           if (msg.role === 'assistant' && msg.content) lastAssistant = msg.content
           run.phase = msg.role === 'assistant' && msg.toolCalls?.length ? 'working' : 'thinking'
@@ -1198,9 +1167,10 @@ class AssistantStore {
       })
     } catch (err) {
       if (!run.cancelled) {
-        this.state.error = friendlyStreamError(err instanceof Error ? err.message : String(err))
-        thread.messages.push({ role: 'assistant', content: this.state.error, error: true, ts: Date.now() })
-        lastAssistant = this.state.error
+        const failure = friendlyStreamError(err instanceof Error ? err.message : String(err))
+        this.conversationErrors.set(thread.id, failure)
+        thread.messages.push({ role: 'assistant', content: failure, error: true, ts: Date.now() })
+        lastAssistant = failure
         this.pausedMessages.add(thread.id)
       }
     } finally {
@@ -1222,7 +1192,7 @@ class AssistantStore {
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err)
         thread.messages.push({ role: 'assistant', content: `${uiText('assistant.channel.deliveryFailed')}: ${detail}`, error: true, ts: Date.now() })
-        if (this.state.active?.id === thread.id) this.state.error = thread.messages.at(-1)!.content
+        this.conversationErrors.set(thread.id, thread.messages.at(-1)!.content)
         await this.saveThread(thread)
         await this.reloadThreads()
         this.notify()
@@ -1570,10 +1540,10 @@ class AssistantStore {
    * In-app `/clear`: wipe the active chat's messages but keep its id + saved
    * `memory.jsonl`, so the next turn starts fresh yet still remembers facts.
    */
-  async clearActive(): Promise<void> {
-    const active = this.state.active
+  async clearActive(target?: AiChatThread): Promise<void> {
+    const active = target ?? this.state.active
     if (!active) return
-    this.stop()
+    this.stop(active.id)
     await this.clearSavedThread(active.id)
     active.messages = []
     this.state.lastModel = null

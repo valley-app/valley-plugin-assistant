@@ -99,7 +99,7 @@ describe('simple local action responsiveness', () => {
     await coordinator.waitForTurn('chat', 'new')
     await expect(late.stream('Old output')).rejects.toThrow('No progress')
     expect(coordinator.snapshot('chat')).toMatchObject({ state: 'IDLE', error: null, streamingText: '' })
-    expect(coordinator.snapshot('chat')?.thread?.messages).toEqual([expect.objectContaining({ content: 'New turn finished' })])
+    expect(coordinator.snapshot('chat')?.thread?.messages).toEqual([expect.objectContaining({ role: 'assistant', error: true, content: expect.stringContaining('This request failed and did not finish: No progress') }), expect.objectContaining({ content: 'New turn finished' })])
     await coordinator.close(); await restored.close()
   })
 })

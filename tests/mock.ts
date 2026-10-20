@@ -41,7 +41,7 @@ export function createMockValleyApi(options: MockOptions = {}) {
     providers: [],
     connections: []
   }
-  let guardPolicy = (options.aiConfig ?? defaultAiConfig).guard
+  const guardPolicy = (options.aiConfig ?? defaultAiConfig).guard
   const emptyBucket = { inputTokens: 0, outputTokens: 0, costUsd: 0, calls: 0 }
   const defaultAiUsage: AiUsageStats = {
     month: { ...emptyBucket },
@@ -97,11 +97,6 @@ export function createMockValleyApi(options: MockOptions = {}) {
         writeRule: (name, content) => recordDriver('ai', 'writeRule', { name, content }),
         getGuard: async () => {
           await recordDriver('ai', 'getGuard', {})
-          return { ok: true, data: { guard: guardPolicy } }
-        },
-        saveGuard: async (policy) => {
-          await recordDriver('ai', 'saveGuard', { policy })
-          guardPolicy = policy
           return { ok: true, data: { guard: guardPolicy } }
         },
         appendGuardAudit: (entry) => recordDriver('ai', 'appendGuardAudit', { entry }),

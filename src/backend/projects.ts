@@ -3,7 +3,7 @@ import path from 'path-browserify'
 import type { DatasetRecord, PluginBackendOperationContext } from '@valley/plugin-sdk'
 import type { ProjectRoot, ProjectFile } from '@valley/plugin-sdk/pluginExecution'
 import type { FileBaseline } from '@valley/plugin-sdk/types'
-import type { AssistantProject } from '../types'
+import type { AiChatThread, AssistantProject } from '../types'
 import { backendApi, VAULT_ROOT } from './runtime'
 import { datasetRows } from './attachments'
 import { listChats, readChat, saveChat } from './threads'
@@ -23,8 +23,8 @@ export async function rootsFor(project: AssistantProject, api: PluginBackendOper
   const roots = await api.projects.roots(project.id)
   return roots.sort((a, b) => (project.folders.indexOf(a.id) < 0 ? Infinity : project.folders.indexOf(a.id)) - (project.folders.indexOf(b.id) < 0 ? Infinity : project.folders.indexOf(b.id)))
 }
-export async function executionContext(chatId: string, api: PluginBackendOperationContext['api'] = backendApi()) {
-  const thread = await readChat(VAULT_ROOT, chatId, api)
+export async function executionContext(chatId: string, api: PluginBackendOperationContext['api'] = backendApi(), known?: Pick<AiChatThread, 'id' | 'projectId'>) {
+  const thread = known?.id === chatId ? known : await readChat(VAULT_ROOT, chatId, api)
   if (!thread) throw new Error('Conversation is unavailable')
   const access = await api.projects.access()
   const project = thread.projectId ? await projectFor(thread.projectId, api) : undefined

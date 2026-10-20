@@ -98,6 +98,8 @@ export interface AiMessage {
   channelDeliveryId?: string
   ingestionState?: 'pending' | 'complete'
   voiceInput?: boolean
+  /** Set on a user message whose turn the user stopped; the model is told not to carry it out unasked. */
+  stopped?: boolean
   id?: string
   continuation?: AiContinuation
   displayContent?: string
@@ -111,6 +113,8 @@ export interface AiMessage {
     name?: string
     attachments?: AiAttachment[]
     error?: boolean
+    /** Set on the plain reply that ends a failed turn: the raw error it explains. */
+    failure?: string
     render?: 'quiz-image'
     ts?: number
 }
@@ -210,15 +214,6 @@ export interface AiUsageStats {
   budget: AiBudget
     recentEntries: AiUsageEntry[]
     since: string | null
-}
-
-export interface AiCacheStats {
-    hits: number
-  savedInputTokens: number
-  savedOutputTokens: number
-  savedCostUsd: number
-    entries: number
-  byKind: { modelList: number; balance: number; completion: number }
 }
 
 export interface AiModelRef {

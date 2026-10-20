@@ -17,7 +17,7 @@ export function datasetFixture(): PluginBackendApi['data'] {
       count: async (where = {}) => rows.filter(row => matches(row, where)).length,
       insert: async (record: Record<string, unknown> | Array<Record<string, unknown>>) => { for (const row of Array.isArray(record) ? record : [record]) { if (rows.some(existing => matches(existing, key(row)))) throw new Error('Duplicate record'); rows.push(structuredClone(row)) } },
       upsert: async (record: Record<string, unknown> | Array<Record<string, unknown>>) => { for (const row of Array.isArray(record) ? record : [record]) { const index = rows.findIndex(existing => matches(existing, key(row))); if (index < 0) rows.push(structuredClone(row)); else rows[index] = { ...rows[index], ...structuredClone(row) } } },
-      update: async (where: Record<string, unknown>, patch: Record<string, unknown>) => { for (const row of rows) if (matches(row, where)) Object.assign(row, structuredClone(patch)) },
+      update: async (where: Record<string, unknown>, patch: Record<string, unknown>) => { if (Object.keys(key({})).some(column => column in patch)) throw new Error('Primary-key updates are not supported'); for (const row of rows) if (matches(row, where)) Object.assign(row, structuredClone(patch)) },
       delete: async (where: Record<string, unknown>) => { for (let index = rows.length - 1; index >= 0; index--) if (matches(rows[index], where)) rows.splice(index, 1) }
     }
   }, async transaction(operations: Array<{ dataset: string; operation: string; key?: Record<string, unknown>; values?: Record<string, unknown> }>) {

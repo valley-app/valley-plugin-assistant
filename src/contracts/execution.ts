@@ -6,6 +6,7 @@ export type SessionState = typeof sessionStates[number]
 export interface QueuedTurn {
   admissionPending?: boolean
   targetReference?: string
+  targetFallback?: 'sole-window'
   inputFingerprint?: string
   questionId?: string
   channelActor?: { senderId: string; topicId?: string; chatType?: import('./channel').MessageDestination['chatType'] }
@@ -43,6 +44,7 @@ export interface SessionEvent {
 export interface TurnSubmission {
   admissionPending?: boolean
   targetReference?: string
+  targetFallback?: 'sole-window'
   inputFingerprint?: string
   questionId?: string
   channelActor?: { senderId: string; topicId?: string; chatType?: import('./channel').MessageDestination['chatType'] }

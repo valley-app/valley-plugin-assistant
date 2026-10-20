@@ -12,7 +12,7 @@ export interface ToolExecutionContext {
   planning: boolean
   guardLayers?: GuardLayers
   operation: PluginBackendOperationContext
-  state(state: SessionState): Promise<void>
+  state(state: SessionState, tool?: string): Promise<void>
   approve(targets: GuardTarget[], args: unknown): Promise<boolean>
 }
 export interface AssistantTool<TInput = unknown, TOutput = unknown> {

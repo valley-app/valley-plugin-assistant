@@ -61,6 +61,18 @@ describe('voice session lifecycle', () => {
     await act(async () => { await Promise.resolve() })
   })
 
+  it('fills the whole chat page with a centred voice view when started from the sidebar, and Escape ends it', async () => {
+    const test = fixture(), onClose = vi.fn()
+    render(<VoiceControls {...test.props} hiddenLauncher requested onClose={onClose} />)
+    await screen.findByRole('button', { name: 'Hold to talk' })
+    const page = screen.getByRole('dialog', { name: 'Voice' })
+    expect(page).toHaveClass('assistant-voice-page')
+    expect(page.closest('.assistant-voice-panel')).toBeNull()
+    fireEvent.keyDown(page, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledOnce()
+    await waitFor(() => expect(test.speech.control).toHaveBeenCalledWith({ sessionId: 'session-a', action: 'stop' }))
+  })
+
   it('subscribes before starting, sends PTT controls in order and only commits each final transcript once', async () => {
     const test = fixture()
     render(<VoiceControls {...test.props} />)

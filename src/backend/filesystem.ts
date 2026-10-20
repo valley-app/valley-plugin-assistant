@@ -59,14 +59,16 @@ export async function readFile(file: string, _encoding: 'utf8' = 'utf8', api: St
   if (!await api.storage.stat(location)) throw missing(file)
   const decoder = new TextDecoder()
   let result = '', offset = 0
-  while (true) {
-    const chunk = await api.storage.readBytes(location, { offset, maxBytes: 1024 * 1024 })
-    result += decoder.decode(Uint8Array.from(atob(chunk.base64), (character) => character.charCodeAt(0)), { stream: !chunk.done })
-    if (chunk.done) return result
-    if (chunk.nextOffset <= offset) throw new Error(t('assistant.backend.readStalled'))
-    offset = chunk.nextOffset
-    if (offset > 128 * 1024 * 1024) throw new Error(t('assistant.backend.textLimit'))
-  }
+  try {
+    while (true) {
+      const chunk = await api.storage.readBytes(location, { offset, maxBytes: 1024 * 1024 })
+      result += decoder.decode(Uint8Array.from(atob(chunk.base64), (character) => character.charCodeAt(0)), { stream: !chunk.done })
+      if (chunk.done) return result
+      if (chunk.nextOffset <= offset) throw new Error(t('assistant.backend.readStalled'))
+      offset = chunk.nextOffset
+      if (offset > 128 * 1024 * 1024) throw new Error(t('assistant.backend.textLimit'))
+    }
+  } finally { decoder.decode() }
 }
 /** The exact bytes of a file as base64, or null when it is larger than maxBytes (at most 1 MiB). */
 export async function readBoundedBase64(file: string, maxBytes: number, api: StorageApi = backendApi()): Promise<{ base64: string; bytes: number } | null> {

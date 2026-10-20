@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { DatasetTransactionOperation } from '@valley/plugin-sdk/datasets'
-import { AssistantRepository, record } from '../persistence/repositories'
+import { AssistantRepository, changes, record } from '../persistence/repositories'
 import { runExclusive } from '../fileQueue'
 
 const inputSchema = z.object({ conversationId: z.string().min(1), connectionId: z.string().min(1), recipientId: z.string().min(1), text: z.string().min(1).max(10000), choices: z.array(z.object({ value: z.string().min(1).max(64), label: z.string().min(1).max(256) }).strict()).max(20).default([]), attachmentIds: z.array(z.string().uuid()).max(8).optional(), quiz: z.object({ source: z.string().min(1).max(4096), problemId: z.string().min(1).max(1024), servedIds: z.array(z.string().max(1024)).max(10000), context: z.string().max(24000) }).strict().optional() }).strict()
@@ -26,14 +26,14 @@ export class QuestionManager {
       if (question.expiresAt <= Date.now()) { await this.expire(question, continuation); return false }
       if (!input.answer.trim() || input.answer.length > 32000 || question.choices.length && !question.choices.some(choice => choice.value === input.answer)) return false
       question.answer = input.answer; question.state = 'ANSWERED'
-      await this.repository.data.transaction([{ dataset: 'questions', operation: 'update', key: { id: question.id }, values: record(question.id, question.conversationId, question.state, question) }, ...continuation(question)])
+      await this.repository.data.transaction([{ dataset: 'questions', operation: 'update', key: { id: question.id }, values: changes(question.conversationId, question.state, question) }, ...continuation(question)])
       return true
     })
   }
 
   private async expire(question: Question, continuation: (question: Question) => DatasetTransactionOperation[]) {
     question.state = 'EXPIRED'
-    await this.repository.data.transaction([{ dataset: 'questions', operation: 'update', key: { id: question.id }, values: record(question.id, question.conversationId, question.state, question) }, ...continuation(question)])
+    await this.repository.data.transaction([{ dataset: 'questions', operation: 'update', key: { id: question.id }, values: changes(question.conversationId, question.state, question) }, ...continuation(question)])
   }
 
   async expireDue(continuation: (question: Question) => DatasetTransactionOperation[]): Promise<void> {

@@ -9,8 +9,15 @@ export function isSimpleLocalAction(turn: TurnSubmission | undefined, planning: 
 }
 
 export interface TurnProgress {
+  /** A forward transition: names the stage and starts its own no-progress deadline. */
   stage(name: string, timeoutMs?: number): void
+  /** Useful provider or tool output: extends the current stage's deadline. */
   advance(): void
+  /** Names the stage without extending the deadline: rediscovery and repeated identical failures are not progress.
+   *  A longer provider wait is cut back to 10 s. */
+  hold(name: string): void
+  /** An accepted effect whose outcome is not known yet; named in the expiry message so it is reconciled, never replayed. */
+  uncertain(note?: string): void
 }
 
 export interface TurnAdmission {
@@ -39,22 +46,32 @@ export async function admitTurn<T>(work: (admission: TurnAdmission) => Promise<T
   finally { finished = true; clearTimeout(timer); signal?.removeEventListener('abort', abort) }
 }
 
+// The deadline is monotonic and rechecked on every step, so work that stalled the event loop past it ends the turn
+// instead of re-arming a fresh timer; the timer alone only covers waits where nothing runs.
 export async function runResponsiveTurn(controls: RunControls, work: (controls: RunControls, progress: TurnProgress) => Promise<void>): Promise<void> {
   const controller = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined, stage = 'preparing the conversation', timeout = 10000, finished = false
+  let timer: ReturnType<typeof setTimeout> | undefined, stage = 'preparing the conversation', timeout = 10000, deadline = 0, armedAt = 0, finished = false, pending: string | undefined
+  // A provider wait longer than 10 s keeps a 10 s marker, so a repeat within it is cut back to the host limit.
+  let short: ReturnType<typeof setTimeout> | undefined, shortElapsed = false, capped = false
   let reject!: (error: Error) => void
   const interrupted = new Promise<never>((_resolve, fail) => { reject = fail })
-  const stop = (error: Error) => { if (finished) return; controller.abort(error); reject(error) }
+  const stop = (error: Error) => { if (finished || controller.signal.aborted) return; controller.abort(error); reject(error) }
+  const expire = () => stop(Object.assign(new Error(`No progress while ${stage} for ${timeout / 1000} seconds. The turn stopped. ${pending ? `${pending} It is not retried automatically.` : 'Check any pending operation before retrying.'}`), { code: 'TURN_NO_PROGRESS' }))
+  const overdue = () => timeout > 0 && performance.now() >= deadline
   const arm = () => {
-    clearTimeout(timer)
-    if (!finished && !controller.signal.aborted && timeout) timer = setTimeout(() => stop(new Error(`No progress while ${stage} for ${timeout / 1000} seconds. The turn stopped. Check any pending operation before retrying.`)), timeout)
+    armedAt = performance.now(); deadline = armedAt + timeout; clearTimeout(timer); clearTimeout(short); shortElapsed = false; capped = false
+    if (!finished && !controller.signal.aborted && timeout) timer = setTimeout(expire, timeout)
+    if (!finished && !controller.signal.aborted && timeout > 10000) short = setTimeout(() => { shortElapsed = true; if (capped) expire() }, 10000)
   }
   const abort = () => stop(new Error('Conversation cancelled'))
   controls.signal.addEventListener('abort', abort, { once: true })
-  const current = () => { if (finished || controller.signal.aborted) throw controller.signal.reason ?? new Error('Conversation turn ended') }
+  const current = () => {
+    if (!finished && !controller.signal.aborted && overdue()) expire()
+    if (finished || controller.signal.aborted) throw controller.signal.reason ?? new Error('Conversation turn ended')
+  }
   const guarded: RunControls = {
     ...controls, signal: controller.signal,
-    state: async state => { current(); await controls.state(state) },
+    state: async (state, tool) => { current(); await controls.state(state, tool) },
     message: async message => { current(); await controls.message(message) },
     stream: async text => { current(); await controls.stream(text) },
     context: async usage => { current(); await controls.context(usage) },
@@ -62,10 +79,21 @@ export async function runResponsiveTurn(controls: RunControls, work: (controls: 
   }
   const progress: TurnProgress = {
     stage: (name, timeoutMs) => { current(); stage = name; timeout = timeoutMs ?? 10000; arm() },
-    advance: () => { if (!finished && !controller.signal.aborted) arm() }
+    advance: () => { if (finished || controller.signal.aborted) return; if (overdue()) expire(); else arm() },
+    hold: name => {
+      current(); stage = name
+      if (!timeout) { timeout = 10000; arm() }
+      else if (timeout > 10000) {
+        // A provider that took longer than 10 s to answer gets 10 s from its answer, otherwise 10 s from the request.
+        timeout = 10000
+        if (shortElapsed) arm()
+        else { capped = true; clearTimeout(timer); deadline = armedAt + timeout }
+      }
+    },
+    uncertain: note => { pending = note }
   }
   if (controls.signal.aborted) abort()
   arm()
   try { await Promise.race([Promise.resolve().then(() => { current(); return work(guarded, progress) }), interrupted]) }
-  finally { finished = true; clearTimeout(timer); controls.signal.removeEventListener('abort', abort) }
+  finally { finished = true; clearTimeout(timer); clearTimeout(short); controls.signal.removeEventListener('abort', abort) }
 }

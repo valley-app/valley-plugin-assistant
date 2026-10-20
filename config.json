@@ -1368,6 +1368,237 @@
         }
       },
       {
+        "id": "command.sendMessage",
+        "version": "1.0.0",
+        "method": "command.sendMessage",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        },
+        "metadata": {
+          "command": {
+            "id": "send-message",
+            "description": "Send a message to an existing conversation and wait until its turn finishes",
+            "effect": "write",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500000
+                }
+              },
+              "required": [
+                "id",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "outputSchema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "projectId": {
+                  "type": "string"
+                },
+                "profileId": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "channelId": {
+                  "type": "string"
+                },
+                "chatRef": {
+                  "type": "string"
+                },
+                "channelName": {
+                  "type": "string"
+                },
+                "channelIdentity": {
+                  "type": "string"
+                },
+                "configurationHash": {
+                  "type": "string"
+                },
+                "instructionsPath": {
+                  "type": "string"
+                },
+                "channelSenderId": {
+                  "type": "string"
+                },
+                "channelTopicId": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "provider": {
+                          "type": "string"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "connectionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "provider",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reasoningEffort": {
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ]
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "enum": [
+                          "system",
+                          "user",
+                          "assistant",
+                          "tool"
+                        ]
+                      },
+                      "content": {
+                        "type": "string"
+                      },
+                      "displayContent": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "toolCallId": {
+                        "type": "string"
+                      },
+                      "error": {
+                        "type": "boolean"
+                      },
+                      "voiceInput": {
+                        "type": "boolean"
+                      },
+                      "ts": {
+                        "type": "number"
+                      },
+                      "attachmentIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "attachments": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "mime": {
+                              "type": "string"
+                            },
+                            "dataBase64": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "mime",
+                            "dataBase64"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "role",
+                      "content"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "mode": {
+                  "enum": [
+                    "plan",
+                    "execute"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "createdAt",
+                "updatedAt",
+                "messages"
+              ],
+              "additionalProperties": true
+            },
+            "limits": {
+              "executionMs": 1800000
+            },
+            "result": "command",
+            "reconcileMethod": "command.sendMessage.reconcile"
+          }
+        }
+      },
+      {
+        "id": "command.sendMessage.reconcile",
+        "version": "1.0.0",
+        "method": "command.sendMessage.reconcile",
+        "operation": true,
+        "request": {
+          "type": "unknown"
+        },
+        "response": {
+          "type": "unknown"
+        }
+      },
+      {
         "id": "command.session.stop",
         "version": "1.0.0",
         "method": "command.session.stop",
@@ -9900,6 +10131,13 @@
   },
   "assets": "runtime/assets",
   "permissions": {
+    "cache": {
+      "maxBytes": 402653184,
+      "namespaces": [
+        { "id": "evaluations.jarvis", "maxBytes": 268435456 },
+        { "id": "evaluations.windmill", "maxBytes": 134217728 }
+      ]
+    },
     "network": {
       "hosts": [
         "api.telegram.org",

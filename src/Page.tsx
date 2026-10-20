@@ -165,12 +165,15 @@ export function buildRenderItems(messages: AiMessage[], steps: ActivityStep[] = 
     if (!turn.length) return
     const entries: ActivityEntry[] = []
     const final = [...turn].reverse().find(item => item.kind === 'message' && item.message.role === 'assistant' && !item.message.toolCalls?.length)
+    // The opening line (text written before the first tool call) stays above the work block; later text between tools stays inside it.
+    const first = turn.find(item => item.kind !== 'message' || item.message.role !== 'user')
+    const opening = first?.kind === 'message' && first.message.role === 'assistant' && first.message.toolCalls?.length && first !== final ? first : undefined
     const runIds = new Set(turn.flatMap(item => item.kind === 'message' ? [item.message.activityRunId] : item.entries.map(entry => entry.runId ?? entry.result?.activityRunId)).filter(Boolean))
     const firstTime = turn.find(item => item.kind === 'message' && item.message.role === 'user')
     const start = firstTime?.kind === 'message' ? firstTime.message.ts ?? 0 : 0
     for (const item of turn) {
       if (item.kind === 'message' && item.message.role === 'user') grouped.push(item)
-      else if (item.kind === 'message' && item !== final) entries.push({ message: item.message })
+      else if (item.kind === 'message' && item !== final && item !== opening) entries.push({ message: item.message })
       else if (item.kind === 'activity') for (const entry of item.entries) {
         const step = steps.find(step => step.callId === (entry.call?.id ?? entry.result?.toolCallId) && (!(entry.runId ?? entry.result?.activityRunId) || step.runId === (entry.runId ?? entry.result?.activityRunId)))
         if (step) used.add(step)
@@ -188,6 +191,7 @@ export function buildRenderItems(messages: AiMessage[], steps: ActivityStep[] = 
     const timestamps = turn.flatMap(item => item.kind === 'message' ? [item.message.ts] : item.entries.map(entry => entry.result?.ts)).filter((time): time is number => time != null && Number.isFinite(time))
     const starts = roots.length ? roots.map(step => step.startedAt) : [...timestamps, ...turnSteps.map(step => step.startedAt)]
     const ends = roots.length ? roots.filter(step => step.state !== 'running' && step.state !== 'approval').map(step => step.timestamp) : [...timestamps, ...turnSteps.map(step => step.timestamp)]
+    if (opening) grouped.push(opening)
     if (entries.length) grouped.push({ kind: 'activity', entries, startedAt: starts.length ? Math.min(...starts) : undefined, endedAt: ends.length ? Math.max(...ends) : undefined })
     if (final) grouped.push(final)
     turn = []
@@ -660,7 +664,7 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
       <api.ui.ScrollPanel fill followEnd scrollToEndKey={`${draftId}:${scrollRequest}`} onAtEndChange={atEnd => setAwayFromBottom(!atEnd)}>
       <div className="assistant-message-content" {...dragHandlers}>
         {activity.error && <ErrorNotice error={activity.error} />}
-        {snap.error && !messages.some(message => message.error && message.content === snap.error) && <ErrorNotice error={snap.error} />}
+        {snap.error && !messages.some(message => message.error && (message.content === snap.error || message.failure === snap.error)) && <ErrorNotice error={snap.error} />}
         {messages.length === 0 && !snap.streaming && !readOnly && (
           <div className="assistant-welcome">
             <div className="assistant-welcome-mark"><Chat />{uiText('manifest.name')}</div>
@@ -737,7 +741,6 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
         <button className="assistant-btn assistant-btn-ghost" onClick={() => { void store.changePlan(snap.active!.plan!.id).then(() => inputRef.current?.focus()).catch(error => setAttachmentError(String(error))) }}>{uiText('assistant.plan.change')}</button>
         <button className="assistant-btn" onClick={() => { void store.implementPlan(snap.active!.plan!.id).catch(error => setAttachmentError(String(error))) }}>{uiText('assistant.plan.implement')}</button>
       </div>}
-      {!readOnly && snap.active && <VoiceControls hiddenLauncher requested={snap.voiceConversationId === snap.active.id} onClose={() => store.closeVoice()} conversationId={snap.active.id} executionState={snap.activeBusy ? snap.phase : snap.stopped ? 'cancelled' : snap.error ? 'failed' : snap.active.plan?.status === 'review' ? 'review' : 'idle'} response={(() => { const message = [...(snap.active?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.content && !message.error && !message.toolCalls?.length); return message?.id && !snap.activeBusy ? { id: message.id, text: message.content } : undefined })()} onTranscript={({ id, text }) => store.send(text, undefined, id, 'voice')} onError={setAttachmentError} onInterrupted={() => store.interruptVoice()} />}
       {awayFromBottom && <button type="button" className="assistant-jump-latest" title={uiText('assistant.scroll.latest')} aria-label={uiText('assistant.scroll.latest')} onClick={jumpToLatest}><ArrowDown /></button>}
       {readOnly ? (
         <div className="assistant-channel-banner" role="status">
@@ -857,6 +860,7 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
         </div>
       )}
       </div>
+      {!readOnly && snap.active && <VoiceControls hiddenLauncher requested={snap.voiceConversationId === snap.active.id} onClose={() => store.closeVoice()} conversationId={snap.active.id} executionState={snap.activeBusy ? snap.phase : snap.stopped ? 'cancelled' : snap.error ? 'failed' : snap.active.plan?.status === 'review' ? 'review' : 'idle'} response={(() => { const message = [...(snap.active?.messages ?? [])].reverse().find(message => message.role === 'assistant' && message.content && !message.error && !message.toolCalls?.length); return message?.id && !snap.activeBusy ? { id: message.id, text: message.content } : undefined })()} onTranscript={({ id, text }) => store.send(text, undefined, id, 'voice')} onError={setAttachmentError} onInterrupted={() => store.interruptVoice()} />}
       {dropping && !readOnly && <div className="assistant-drop-overlay" role="status"><span>{uiText('assistant.attachment.drop')}</span></div>}
       </div>
     </div>

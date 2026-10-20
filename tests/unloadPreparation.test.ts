@@ -277,7 +277,7 @@ describe('renderer and backend unload ownership', () => {
     expect((await backend.repository.get<SessionSnapshot>('sessions', id))?.thread?.messages.some(message => message.id === 'answer')).toBe(false)
     journal.resolve(); await closing
     await backend.restore()
-    expect(backend.coordinator.snapshot(id)?.thread?.messages.filter(message => message.id === 'answer')).toHaveLength(1)
+    expect((await backend.coordinator.load(id))?.thread?.messages.filter(message => message.id === 'answer')).toHaveLength(1)
     expect(backend.model).toHaveBeenCalledTimes(1)
   })
 

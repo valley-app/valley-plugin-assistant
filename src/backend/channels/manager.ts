@@ -137,10 +137,10 @@ class ChannelManager {
       },
       receive: async (id, message) => {
         const config = (await this.readConfig('/vault'))[id]
-        if (!config?.enabled || !config.allowFrom.includes(message.chatRef)) throw new Error('Sender is no longer allowed')
+        if (!config?.enabled || !config.allowFrom.some(entry => entry.trim() === message.chatRef.trim())) throw new Error('Sender is no longer allowed')
         if (message.data?.startsWith('choice:')) {
           if (!message.senderId) throw new Error('Configuration choice has no authenticated sender')
-          const accepted = await new ChannelChoices(runtime.repository).consume(message.data, { channelId: id, chatRef: message.chatRef, senderId: message.senderId, messageId: message.callbackMessageId }, (value, questionId) => runtime.onInbound(id, questionId ? { ...message, data: undefined, text: value, questionId } : { ...message, data: value }))
+          const accepted = await new ChannelChoices(runtime.repository).consume(message.data, { channelId: id, chatRef: message.chatRef, senderId: message.senderId, messageId: message.callbackMessageId }, (value, questionId, reply) => runtime.onInbound(id, questionId ? { ...message, data: undefined, text: value, questionId } : reply ? { ...message, data: undefined, text: value } : { ...message, data: value }))
           if (!accepted) throw new Error('This choice expired or belongs to another sender or message')
           return
         }
@@ -153,7 +153,13 @@ class ChannelManager {
         }
         await runtime.onInbound(id, message)
       },
-      error: (id, error) => { const channel = this.instances.get(id); if (channel) channel.lastError = error; emitDriverEvent('channels', 'ingestion.failed', { channelId: id, error }); emitDriverEvent('channels', 'channels.changed', {}) }
+      error: (id, error) => { const channel = this.instances.get(id); if (channel) channel.lastError = error; emitDriverEvent('channels', 'ingestion.failed', { channelId: id, error }); emitDriverEvent('channels', 'channels.changed', {}) },
+      // dispatch only reaches allowed recipients, so a sender who is not allowed gets no reply.
+      failed: async (id, message, error) => {
+        const config = (await this.readConfig('/vault'))[id]
+        if (config?.type !== 'telegram' && config?.type !== 'whatsapp') return
+        await this.dispatch({ kind: config.type, conversationId: `channel:${id}:${message.chatRef}`, channelId: id, chatRef: message.chatRef, topicId: message.topicId, chatType: message.chatType, ...(message.providerMessageId && !message.data ? { replyToMessageId: message.providerMessageId } : {}) }, { type: 'text', text: `This message failed and was not processed: ${error}`, format: 'plain' })
+      }
     })
   }
 

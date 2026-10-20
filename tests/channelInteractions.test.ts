@@ -27,6 +27,32 @@ describe('backend channel interactions', () => {
     expect(channelFixture.dispatch.mock.calls[0][1]).toMatchObject({ type: 'text', text: 'Four.' })
   })
 
+  it('turns a tap on a button the model sent into the user\'s reply, from the same sender only (buttons fix)', async () => {
+    const { runtime } = createBackendChannelFixture()
+    channelFixture.infer.mockImplementationOnce(async (_input: unknown, _context: unknown, hooks: RuntimeHooks) => {
+      await hooks.tool({ id: 'ask', name: 'channel_send', arguments: { deliveryKey: 'confirm', content: { type: 'buttons', text: 'Play Fern Song?', choices: [{ label: 'Yes, play it', value: 'yes' }, { label: 'No', value: 'no' }] } } })
+      hooks.event({ type: 'message', message: { role: 'assistant', content: 'Waiting for your choice.' } })
+    })
+    const accepted = await runtime.inbound('telegram', inbound('Play Fern Song', 'play'))
+    await idle(runtime, accepted.conversationId)
+    const sent = channelFixture.dispatch.mock.calls.map(call => call[1] as { type: string; choices?: Array<{ label: string; value: string }> }).find(content => content.type === 'buttons')!
+    expect(sent.choices!.map(choice => choice.label)).toEqual(['Yes, play it', 'No'])
+    for (const choice of sent.choices!) expect(choice.value).toMatch(/^choice:[0-9a-f]{32}$/)
+    const choices = new ChannelChoices(runtime.repository)
+    const tap = (senderId: string) => choices.consume(sent.choices![0].value, { channelId: 'telegram', chatRef: '123', senderId, messageId: 'provider-reply' }, async (value, questionId, reply) => {
+      expect({ value, questionId, reply }).toEqual({ value: 'Yes, play it', questionId: undefined, reply: true })
+      await runtime.inbound('telegram', inbound(value, 'tap'))
+    })
+    expect(await tap('someone-else')).toBe(false)
+    channelFixture.infer.mockImplementationOnce(async (input: { request: AiChatRequest }, _context: unknown, hooks: RuntimeHooks) => {
+      expect(input.request.messages.at(-1)).toMatchObject({ role: 'user', content: 'Yes, play it' })
+      hooks.event({ type: 'message', message: { role: 'assistant', content: 'Playing Fern Song.' } })
+    })
+    expect(await tap('sender')).toBe(true)
+    await vi.waitFor(() => expect(channelFixture.threads.get(accepted.conversationId)?.messages.at(-1)).toMatchObject({ role: 'assistant', content: 'Playing Fern Song.' }))
+    expect(await tap('sender')).toBe(false)
+  })
+
   it('imports a generated document, discovers its durable reference, and sends the preserved original', async () => {
     const { runtime, api } = createBackendChannelFixture()
     const document = { id: '6944b2e6-9c5c-423e-8755-f1c0a13774c9', path: '.valley/plugins/data/assistant/attachment/report', fileName: 'Mechanik Lösung.pdf', mime: 'application/pdf', kind: 'pdf' as const, owned: true, sha256: 'hash', state: 'ready', createdAt: 1 }
@@ -117,6 +143,25 @@ describe('backend channel interactions', () => {
     expect(channelFixture.infer).toHaveBeenCalledTimes(2)
     expect(runtime.coordinator.snapshot(first.conversationId)?.thread?.quiz).toBeNull()
     expect(await runtime.repository.get('questions', source!.slice('assistant-question:'.length))).toMatchObject({ state: 'ANSWERED', answer: 'A' })
+  })
+
+  it('asks with buttons when unsure and continues the turn on a tap or on a typed answer', async () => {
+    const { runtime } = createBackendChannelFixture()
+    const ask = async (_input: unknown, _context: unknown, hooks: RuntimeHooks) => { await hooks.tool({ id: crypto.randomUUID(), name: 'ask_user', arguments: { question: 'Which fern note?', choices: [{ label: 'Fern care', value: 'Fern care' }, { label: 'Fern species', value: 'Fern species' }] } }) }
+    channelFixture.infer.mockImplementationOnce(ask)
+    const first = await runtime.inbound('telegram', inbound('Open the fern note', 'unclear'))
+    await vi.waitFor(() => expect(runtime.coordinator.snapshot(first.conversationId)).toMatchObject({ state: 'AWAITING_QUESTION', error: null }))
+    await vi.waitFor(() => expect(channelFixture.dispatch).toHaveBeenCalledTimes(2))
+    await runtime.inbound('telegram', inbound('fern species', 'tap'))
+    await idle(runtime, first.conversationId)
+    expect(JSON.stringify(channelFixture.infer.mock.calls[1][0])).toContain('the user chose \\"Fern species\\"')
+    channelFixture.infer.mockImplementationOnce(ask)
+    await runtime.inbound('telegram', inbound('Open another fern note', 'unclear-again'))
+    await vi.waitFor(() => expect(runtime.coordinator.snapshot(first.conversationId)).toMatchObject({ state: 'AWAITING_QUESTION', error: null }))
+    await runtime.inbound('telegram', inbound('The one about moss', 'typed'))
+    await idle(runtime, first.conversationId)
+    expect(channelFixture.infer).toHaveBeenCalledTimes(4)
+    expect(JSON.stringify(channelFixture.infer.mock.calls[3][0])).toContain('the user typed their own answer instead of a choice')
   })
 
   it('does not interpret typed YES as plan approval', async () => {

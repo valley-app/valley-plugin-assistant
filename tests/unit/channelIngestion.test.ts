@@ -59,6 +59,21 @@ describe('durable eager channel ingestion', () => {
     expect(download).toHaveBeenCalledTimes(2)
     await queue.stop()
   })
+  it('reports a failed message to its sender once per attempt, and not when the queue stops', async () => {
+    const repository = new AssistantRepository(datasetFixture())
+    const receive = vi.fn(async () => { throw new Error('Assistant is stopping') }), error = vi.fn(), failed = vi.fn(async () => {})
+    const queue = new InboundMediaQueue(repository, { download: async () => downloaded(), receive, error, failed })
+    await queue.accept('bot', message('1'))
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce())
+    expect(failed).toHaveBeenCalledWith('bot', expect.objectContaining({ providerEventId: '1', chatRef: 'fern' }), 'Assistant is stopping')
+    const stalledDownload = vi.fn((_id: string, _media: unknown, signal: AbortSignal) => new Promise<ReturnType<typeof downloaded>>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason))))
+    const stalled = new InboundMediaQueue(repository, { download: stalledDownload, receive, error, failed })
+    await stalled.accept('bot', message('2'))
+    await vi.waitFor(() => expect(stalledDownload).toHaveBeenCalledOnce())
+    await stalled.stop()
+    expect(failed).toHaveBeenCalledOnce()
+    await queue.stop()
+  })
   it('recovers a promoted attachment without re-downloading after dispatch interruption', async () => {
     const repository = new AssistantRepository(datasetFixture()), id = JSON.stringify(['bot', '1'])
     const job: InboundMediaJob = { id, channelId: 'bot', message: { ...message('1'), attachments: [{ id: 'attachment', path: 'attachment/fern', fileName: 'fern.webp', kind: 'image', metadata: { media: 'sticker' } }] }, state: 'DISPATCHING', attempts: 1, spool: {} }

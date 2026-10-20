@@ -12,6 +12,7 @@ import { stopChatProcesses } from './processScopes'
 import { runExclusive } from './fileQueue'
 import { detectType } from './attachments/detectType'
 import { effectiveSettings } from './configuration/settings'
+import { boundedQuery } from './persistence/repositories'
 
 type Attachment = DatasetRecord & { id: string; path: string; fileName: string; mime: string; kind: InboundAttachment['kind']; owned: boolean; sha256: string; state: string; createdAt: number }
 type Reference = DatasetRecord & { attachmentId: string; chatId: string }
@@ -23,7 +24,7 @@ const digest = (bytes: Uint8Array): string => bytesToHex(sha256(bytes))
 export async function datasetRows<T extends DatasetRecord>(dataset: PluginDatasetApi<T>, where?: import('@valley/plugin-sdk/datasets').DatasetWhere): Promise<T[]> {
   const rows: T[] = []
   let cursor: string | undefined
-  do { const page = await dataset.query({ where, limit: 500, cursor }); rows.push(...page.rows); cursor = page.cursor } while (cursor)
+  do { const page = await boundedQuery(dataset, { where, limit: 500, cursor }); rows.push(...page.rows); cursor = page.cursor } while (cursor)
   return rows
 }
 

@@ -25,35 +25,61 @@ import { cancelAllHarnessRuns } from './harness/runner'
 import { relayAiStream, cancelAllRuns } from './engine'
 import { transportValue } from './transport'
 import { admitTurn } from './engine/responsiveness'
+import { touchesEffects } from './engine/coordinator'
 import type { TurnSubmission } from '../contracts/execution'
 import type { OutboundDelivery } from './channels/deliveryQueue'
+import type { DurableRecord } from './persistence/repositories'
 import { createSealedTestOperations } from './sealedTest'
 export function register(api: PluginBackendApi): () => Promise<void> {
   const workflow = createWorkflowAdapter(api)
   initBackend(api)
   const runtime = new AssistantRuntime(api)
-  channelManager.bindRuntime({ repository: runtime.repository, onInbound: (id, message) => runtime.inbound(id, { ...message, channelId: id, ts: message.receivedAt ?? Date.now() }).then(() => {}), onLifecycle: async (id, event) => { if (event.type === 'receipt' && event.state) await runtime.channels.deliveries.providerReceipt(id, event.providerMessageId, event.state, event.error) }, onAction: async (_id, action, actor) => { if (action.kind === 'plan.approve') await runtime.approve(action.conversationId, action, `${actor.channelId}:${actor.chatRef}:${actor.senderId}`); else await runtime.coordinator.change(action.conversationId, async thread => { if (thread.plan?.id !== action.planId || thread.plan.revision !== action.revision) throw new Error('Plan changed'); thread.plan.status = 'changes'; thread.mode = 'plan'; return {} }) } })
+  channelManager.bindRuntime({ repository: runtime.repository, onInbound: (id, message) => runtime.inbound(id, { ...message, channelId: id, ts: message.receivedAt ?? Date.now() }).then(() => {}), onLifecycle: async (id, event) => { if (event.type === 'receipt' && event.state) await runtime.channels.deliveries.providerReceipt(id, event.providerMessageId, event.state, event.error) }, onAction: async (_id, action, actor) => { if (action.kind === 'plan.approve') await runtime.approve(action.conversationId, action, `${actor.channelId}:${actor.chatRef}:${actor.senderId}`); else {
+    await runtime.coordinator.change(action.conversationId, async thread => { if (thread.plan?.id !== action.planId || thread.plan.revision !== action.revision) throw new Error('Plan changed'); thread.plan.status = 'changes'; thread.mode = 'plan'; return {} })
+    // Same as the in-app "Change" button: confirm the tap and ask what to change, instead of going silent.
+    const thread = runtime.coordinator.snapshot(action.conversationId)?.thread
+    if (thread?.source && thread.channelId && thread.chatRef) await runtime.channels.send({ id: `plan-refine:${action.planId}:${action.revision}`, conversationId: thread.id, destination: { kind: thread.source, conversationId: thread.id, channelId: thread.channelId, chatRef: thread.chatRef, topicId: thread.channelTopicId, chatType: thread.channelChatType }, content: { type: 'text', text: 'Okay, the plan stays open. Tell me what to change.' } })
+  } } })
   const offAi = api.ai.onStream(event => relayAiStream(api, event))
   let active = true
   let disposal: Promise<void> | undefined
-  const pending = new Set<Promise<unknown>>()
-  const ready = importTransferredAttachments().then(() => Promise.all([resumeAttachmentCleanup(), resumeProjectCleanup()])).then(() => rebuildChatSearch(VAULT_ROOT)).then(() => readConfig(VAULT_ROOT)).then(() => runtime.restore())
-  void ready.catch(error => api.rpc.emit('backendError', String(error)))
-  const accepted = <T>(operation: () => Promise<T>): Promise<T> => {
+  // Window and command reads share one bound; a user's turn has its own few slots on top, so a burst of reads can never refuse a message.
+  const pending = new Map<Promise<unknown>, { turn: boolean; startedAt: number }>()
+  const PENDING_LIMIT = 64, TURN_RESERVE = 8
+  // A failed start names its step and reaches the user as one plain message (the host drops backend logs); every request then gets the same message.
+  let step = 'importing attachments'
+  const ready = importTransferredAttachments().then(() => { step = 'resuming cleanup'; return Promise.all([resumeAttachmentCleanup(), resumeProjectCleanup()]) }).then(() => { step = 'indexing chats'; return rebuildChatSearch(VAULT_ROOT) }).then(() => { step = 'reading settings'; return readConfig(VAULT_ROOT) }).then(() => { step = 'restoring conversations'; return runtime.restore() })
+    .catch(error => { throw Object.assign(new Error(t('assistant.backend.startupFailed', { step, value: error instanceof Error ? error.message : String(error) })), { code: 'ASSISTANT_NOT_STARTED', outcome: 'not-applied', retryable: false }) })
+  void ready.catch(error => api.rpc.emit('backendError', error.message))
+  const accepted = <T>(operation: () => Promise<T>, turn = false): Promise<T> => {
     if (!active) return Promise.reject(new Error('Assistant backend is closing'))
-    if (pending.size >= 64) return Promise.reject(new Error('Too many Assistant requests are pending'))
+    const entries = [...pending.values()], turns = entries.filter(entry => entry.turn).length
+    if (turn ? turns >= TURN_RESERVE : entries.length - turns >= PENDING_LIMIT) {
+      const now = Date.now()
+      return Promise.reject(Object.assign(new Error('Too many Assistant requests are pending'), { code: 'ASSISTANT_BUSY', outcome: 'not-applied', retryable: true,
+        details: { pending: entries.length, turns, oldestAgeMs: entries.reduce((oldest, entry) => Math.max(oldest, now - entry.startedAt), 0) } }))
+    }
     const task = ready.then(() => { if (backendApi() !== api) throw new Error('Assistant backend changed before request'); return operation() }).then(transportValue)
-    pending.add(task)
+    pending.set(task, { turn, startedAt: Date.now() })
     void task.then(() => pending.delete(task), () => pending.delete(task))
     return task
   }
-  const startup = ready.then(() => { if (active) return channelManager.ensureStarted(VAULT_ROOT).then(() => channelManager.recoverInbound()) }).catch((error) => { if (active) api.rpc.emit('backendError', String(error)) })
+  const startup = ready.then(() => { if (active) return channelManager.ensureStarted(VAULT_ROOT).then(() => channelManager.recoverInbound()) }, () => undefined).catch((error) => { if (active) api.rpc.emit('backendError', String(error)) })
   const sessionInput = z.object({ conversationId: z.string().min(1).max(256) })
   const admitSubmission = (input: TurnSubmission, context: PluginBackendOperationContext, owner: PluginBackendOperationContext['api']) => admitTurn(admission => accepted(async () => {
     admission.check()
     const target = await admission.step('binding the originating application window', () => context.api.agent.captureTarget())
     return runtime.submit({ ...input, ...(target ? { targetReference: target.reference } : {}) }, owner, admission)
-  }), context.cancellation)
+  }, true), context.cancellation)
+  // send-message is owned by this backend, not by a window: its execution id is the turn id, so a reload neither cancels nor repeats the turn.
+  const sendEnvelope = z.object({ input: z.object({ id: z.string().trim().min(1).max(256), text: z.string().trim().min(1).max(500000) }).strict(), execution: z.object({ id: z.string().min(1).max(512) }).passthrough() })
+  const sendInput = (raw: unknown) => { const value = sendEnvelope.safeParse(raw); if (!value.success) throw Object.assign(new Error(value.error.issues[0]?.message ?? 'Invalid message'), { code: 'INVALID_INPUT', outcome: 'not-applied' }); return value.data }
+  // A turn that failed before any tool beyond catalog discovery ran changed nothing beyond its own history, so the caller sees a plain failure instead of an unknown outcome.
+  const untouched = async (id: string, turnId: string, owner?: PluginBackendOperationContext['api']) => {
+    const thread = (await runtime.coordinator.load(id, owner).catch(() => null))?.thread ?? await readChat(VAULT_ROOT, id, owner).catch(() => null)
+    const messages = thread?.messages ?? [], start = messages.findIndex(item => item.id === turnId)
+    return Boolean(thread) && (start < 0 || !messages.slice(start + 1).some(item => touchesEffects(item, messages)))
+  }
   const commandHandlers: Record<string, (input: unknown, owner: PluginBackendOperationContext['api'], context?: PluginBackendOperationContext) => Promise<unknown>> = {
     'command.settings.read': (_input, owner) => readSettingsDocument(VAULT_ROOT, owner),
     'command.settings.patch': async (input, owner) => {
@@ -64,8 +90,30 @@ export function register(api: PluginBackendApi): () => Promise<void> {
         throw error
       }
     },
-    'command.session.snapshot': async input => runtime.coordinator.snapshot(sessionInput.strict().parse(input).conversationId) ?? null,
+    'command.session.snapshot': async (input, owner) => runtime.coordinator.load(sessionInput.strict().parse(input).conversationId, owner),
     'command.session.submit': async (input, owner, context) => { if (!context) throw new Error('Authenticated submission is required'); const value = z.object({ id: z.string().min(1).max(512), conversationId: z.string().min(1).max(256), text: z.string().min(1).max(500000) }).strict().parse(input); await admitSubmission(value, context, owner); return runtime.coordinator.waitForTurn(value.conversationId, value.id, context.cancellation) },
+    'command.sendMessage': async (raw, owner, context) => {
+      if (!context) throw new Error('Authenticated submission is required')
+      const { input: { id, text }, execution } = sendInput(raw)
+      const thread = await accepted(() => readChat(VAULT_ROOT, id, owner), true).catch((error: unknown) => { throw Object.assign(error instanceof Error ? error : new Error(String(error)), { outcome: 'not-applied' }) })
+      if (!thread) throw Object.assign(new Error(t('assistant.error.missingConversation')), { code: 'CONVERSATION_NOT_FOUND', outcome: 'not-applied' })
+      if (thread.source) throw Object.assign(new Error(t('assistant.error.remoteMessage')), { code: 'REMOTE_CONVERSATION', outcome: 'not-applied' })
+      if (context.cancellation.aborted) throw Object.assign(new Error('The message was cancelled before it was sent'), { code: 'CANCELLED', outcome: 'not-applied' })
+      // A cancelled operation's own API refuses every further call, so after a cancel the history is read through the backend's API.
+      const settled = async (error: unknown): Promise<never> => { throw await untouched(id, execution.id, context.cancellation.aborted ? undefined : owner) && error && typeof error === 'object' ? Object.assign(error, { outcome: 'not-applied' }) : error }
+      const session = await admitSubmission({ id: execution.id, conversationId: id, text, targetFallback: 'sole-window' }, context, owner).then(() => runtime.coordinator.waitForTurn(id, execution.id, context.cancellation)).catch(settled)
+      if (session.error || session.state === 'FAILED' || session.state === 'INTERRUPTED') await settled(new Error(session.error ?? 'Conversation did not complete'))
+      return { value: session.thread ?? await readChat(VAULT_ROOT, id, owner) }
+    },
+    'command.sendMessage.reconcile': async (raw, owner) => {
+      const { input: { id }, execution } = sendInput(raw)
+      const row = await owner.data.dataset<DurableRecord>('turn_queue').get({ id: execution.id })
+      if (!row || row.state === 'REMOVED') return { outcome: 'not-applied' }
+      const session = await runtime.coordinator.load(id, owner)
+      if (row.state === 'COMPLETED') return { outcome: 'applied', value: session?.thread ?? await readChat(VAULT_ROOT, id, owner) }
+      const stopped = row.state === 'ACTIVE' && session?.currentTurn?.id === execution.id && ['FAILED', 'INTERRUPTED'].includes(session.state)
+      return { outcome: stopped && await untouched(id, execution.id, owner) ? 'not-applied' : 'pending' }
+    },
     'command.session.stop': async (input, owner) => { await runtime.coordinator.stop(sessionInput.strict().parse(input).conversationId, owner); return null },
     'command.session.resume': async (input, owner, context) => { const id = sessionInput.strict().parse(input).conversationId; await runtime.coordinator.resume(id, owner); await runtime.coordinator.waitForTurn(id, undefined, context?.cancellation); return null },
     'command.session.queue': async (input, owner, context) => { const value = sessionInput.extend({ turnId: z.string().min(1).max(256), patch: z.object({ text: z.string().max(500000).optional(), editing: z.boolean().optional(), index: z.number().int().nonnegative().optional(), remove: z.boolean().optional() }).strict() }).strict().parse(input); await runtime.coordinator.edit(value.conversationId, value.turnId, value.patch, owner); if (!value.patch.remove && !runtime.coordinator.snapshot(value.conversationId)?.queue.find(turn => turn.id === value.turnId)?.editing) await runtime.coordinator.waitForTurn(value.conversationId, value.turnId, context?.cancellation); return null },
@@ -130,10 +178,10 @@ export function register(api: PluginBackendApi): () => Promise<void> {
       context.cancellation.throwIfAborted()
       return configurationHandlers(VAULT_ROOT, context.api)[method](input)
     }))),
-    ...Object.entries(commandHandlers).map(([method, handler]) => workflow.operation(method, (input, context) => method === 'command.session.submit' ? handler(input, context.api, context).then(transportValue) : accepted(async () => { context.cancellation.throwIfAborted(); return handler(input, context.api, context) }))),
+    ...Object.entries(commandHandlers).map(([method, handler]) => workflow.operation(method, (input, context) => ['command.session.submit', 'command.sendMessage'].includes(method) ? handler(input, context.api, context).then(transportValue) : accepted(async () => { context.cancellation.throwIfAborted(); return handler(input, context.api, context) }))),
     ...Object.entries(configurationHandlers(VAULT_ROOT)).map(([method, handler]) => api.rpc.handle(method, input => accepted(() => handler(input)))),
     api.rpc.handle('session.channelSend', input => accepted(async () => runtime.sendAsChannel(sessionInput.extend({ id: z.string().uuid(), text: z.string().trim().min(1).max(500000) }).strict().parse(input), api))),
-    api.rpc.handle('session.snapshot', input => accepted(async () => runtime.coordinator.snapshot(sessionInput.parse(input).conversationId))),
+    api.rpc.handle('session.snapshot', input => accepted(async () => runtime.coordinator.load(sessionInput.parse(input).conversationId))),
     workflow.operation('session.submit', async (input, context) => { const value = z.object({ id: z.string().min(1).max(512), conversationId: z.string().min(1).max(256), text: z.string().max(500000), thread: chatThread.optional(), origin: z.literal('voice').optional(), attachments: z.array(z.object({ id: z.string().uuid(), path: z.string().min(1).max(4096), fileName: z.string().min(1).max(256), kind: z.enum(['image', 'pdf', 'audio', 'file']), mime: z.string().max(128).optional() }).strict()).max(32).optional() }).strict().parse(input); return admitSubmission(value, context, api) }),
     api.rpc.handle('session.interruptVoice', input => accepted(async () => { const id = sessionInput.parse(input).conversationId; if (['INFERRING', 'PREPARING'].includes(runtime.coordinator.snapshot(id)?.state ?? '')) await runtime.coordinator.stop(id, api) })),
     api.rpc.handle('session.stop', input => accepted(() => runtime.coordinator.stop(sessionInput.parse(input).conversationId, api))),
@@ -238,7 +286,7 @@ export function register(api: PluginBackendApi): () => Promise<void> {
       await processes
       await startup
       const channelResult = await channels
-      while (pending.size) await Promise.allSettled([...pending])
+      while (pending.size) await Promise.allSettled([...pending.keys()])
       await runs
       await cancelAllRuns()
       await drainBackgroundOperations(api)

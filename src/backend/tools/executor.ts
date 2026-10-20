@@ -15,6 +15,10 @@ interface Execution {
 const stable = (value: unknown): string => value === null || typeof value !== 'object' ? JSON.stringify(value) : Array.isArray(value) ? `[${value.map(stable).join(',')}]` : `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`).join(',')}}`
 const failure = (code: string, message: string, outcomeUnknown = false): ToolResult => ({ success: false, error: { code, message: redactSecrets(message), recoverable: !outcomeUnknown, ...(outcomeUnknown ? { outcomeUnknown: true } : {}) } })
 const terminalCodes = new Set(['TARGET_REQUIRED', 'TARGET_UNAVAILABLE', 'RENDERER_UNAVAILABLE', 'RENDERER_LOST', 'RENDERER_TIMEOUT', 'OWNER_CHANGED', 'OWNER_UNAVAILABLE'])
+// A command that refused a target it could not find (a wrong bookmark path) ran nothing, so the model may correct it; only a
+// lost or unknown window ends the turn.
+const windowGone = /application window or document is unavailable|Select an available application window/
+const terminal = (code: string, notApplied: boolean, message: string): boolean => terminalCodes.has(code) && !(code === 'TARGET_UNAVAILABLE' && notApplied && !windowGone.test(message))
 
 export class ToolExecutor {
   constructor(private registry: ToolRegistry, private repository: AssistantRepository) {}
@@ -56,7 +60,7 @@ export class ToolExecutor {
       context.operation.cancellation.throwIfAborted()
       entry.state = 'RUNNING'
       await persist()
-      await context.state('EXECUTING_TOOLS')
+      await context.state('EXECUTING_TOOLS', call.name)
       const controller = new AbortController()
       let interrupt!: (result: ToolResult) => void
       const interruption = new Promise<ToolResult>(resolve => { interrupt = resolve })
@@ -68,8 +72,10 @@ export class ToolExecutor {
       const running = Promise.resolve().then(() => { context.operation.cancellation.throwIfAborted(); return tool.execute(parsed.data, { ...context, operation: { ...context.operation, cancellation: valleyCancellationOf(controller) } }) })
       settlement = running.then(output => ({ success: true, value: tool.output.parse(output) }) as ToolResult).catch(error => {
         const detail = error && typeof error === 'object' ? error as { code?: string; outcome?: string; recoverable?: boolean; execution?: { id: string; command: string; status: string; revision: number } } : {}
-        const result = failure(detail.code ?? 'EXECUTION_FAILED', String(error), tool.effect === 'non-idempotent' && detail.outcome !== 'not-applied')
-        if (!result.success && (detail.recoverable === false || terminalCodes.has(result.error.code))) result.error.recoverable = false
+        // The host rejects invalid input before anything runs, so the model can correct its call instead of the turn stopping.
+        const notApplied = detail.outcome === 'not-applied' || (detail.code === 'INVALID_INPUT' && !detail.execution)
+        const result = failure(detail.code ?? 'EXECUTION_FAILED', String(error), tool.effect === 'non-idempotent' && !notApplied)
+        if (!result.success && (detail.recoverable === false || terminal(result.error.code, notApplied, result.error.message))) result.error.recoverable = false
         if (!result.success && detail.execution) {
           const { id, command, status, revision } = detail.execution
           result.error.execution = { id, command, status, revision }

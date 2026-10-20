@@ -3,16 +3,18 @@ type OwnerApi = PluginBackendOperationContext['api']
 import type { AiChatThread, AiMessage } from '../../types'
 import type { ContextUsage } from '../../contracts/context'
 import type { QueuedTurn, SessionEvent, SessionSnapshot, SessionState, TurnSubmission } from '../../contracts/execution'
-import { AssistantRepository, record } from '../persistence/repositories'
+import { AssistantRepository, boundedQuery, record, type DurableRecord } from '../persistence/repositories'
 import { assertTransition } from './stateMachine'
 import { transportValue } from '../transport'
+import { markChatStopping } from '../processScopes'
 import type { TurnAdmission } from './responsiveness'
+import { failureReply } from './replyShape'
 
 export interface RunControls {
   api?: OwnerApi
   signal: AbortSignal
   shouldSteer(): boolean
-  state(state: SessionState): Promise<void>
+  state(state: SessionState, tool?: string): Promise<void>
   message(message: AiMessage): Promise<void>
   stream(text: string): Promise<void>
   context(usage: ContextUsage): Promise<void>
@@ -24,11 +26,27 @@ export interface CoordinatorPorts {
   publish(session: SessionSnapshot, event: SessionEvent, api?: OwnerApi): void
 }
 
+class StalledSave extends Error {}
+
+/** These tools only read the command catalog, so a stopped turn that ran nothing else still changed nothing. A stored
+ *  tool result names its tool only through the call it answers, so `thread` resolves it by toolCallId. */
+const catalogTools = new Set(['command_list', 'command_describe'])
+type EffectMessage = Pick<AiMessage, 'role' | 'name' | 'toolCalls' | 'toolCallId'>
+export const touchesEffects = (message: EffectMessage, thread: readonly EffectMessage[] = []): boolean => {
+  if (message.role !== 'tool') return Boolean(message.toolCalls?.some(call => !catalogTools.has(call.name)))
+  const name = message.name ?? thread.flatMap(item => item.toolCalls ?? []).find(call => call.id === message.toolCallId)?.name
+  return !catalogTools.has(name ?? '')
+}
+
+function notApplied(reason: unknown): Error {
+  const message = reason instanceof Error ? reason.message : 'Execution cancelled'
+  return Object.assign(new Error(message, { cause: reason }), { name: 'AbortError', committed: false, outcome: 'not-applied', retryable: false })
+}
+
 export class SessionCoordinator {
-  private turnResults = new Map<string, { snapshot: SessionSnapshot; error?: unknown }>()
+  private turnResults = new Map<string, { snapshot: SessionSnapshot; error?: unknown; untouched?: boolean }>()
   private changed = new Set<() => void>()
   private notify(): void { for (const notify of this.changed) notify() }
-  private committed = new Map<string, SessionSnapshot>()
   private turnOwners = new Map<string, OwnerApi>()
   private continuationOwners = new Map<string, OwnerApi>()
   private scoped(api?: OwnerApi): AssistantRepository { return api ? new AssistantRepository(api.data) : this.repository }
@@ -36,37 +54,72 @@ export class SessionCoordinator {
   private active = new Map<string, { controller: AbortController; steer: boolean; occupied: boolean; completed: boolean; task: Promise<void>; api?: OwnerApi }>()
   private capacityWaiters: Array<{ id: string; resume(): void }> = []
   private writes = new Map<string, Promise<unknown>>()
+  // Only the ids: a second in-memory copy of every conversation outgrew the backend's memory.
+  private committed = new Set<string>()
+  // Settled conversations restored without their messages; the stored row keeps them until the conversation is used.
+  private unloaded = new Set<string>()
   private closing = false
   private rejectedAdmissions = new Set<string>()
 
-  constructor(private repository: AssistantRepository, private ports: CoordinatorPorts, private concurrency = 4) {
+  constructor(private repository: AssistantRepository, private ports: CoordinatorPorts, private concurrency = 4, private saveTimeoutMs = 10000) {
     if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('Invalid conversation concurrency')
   }
 
   async restore(): Promise<void> {
-    for (const session of await this.repository.rows<SessionSnapshot>('sessions')) {
-      if (await this.repository.get('conversation_deletions', session.conversationId)) continue
-      this.sessions.set(session.conversationId, session)
-      this.committed.set(session.conversationId, structuredClone(session))
-      for (const turn of [...session.queue]) if (turn.admissionPending) await this.rejectAdmission(turn, new Error('Message admission was interrupted before dispatch. Submit a new instruction.'))
-      const held = session.queue.filter(turn => turn.admissionPending === false)
-      for (const turn of held) turn.editing = true
-      const recovering = !['IDLE', 'AWAITING_QUESTION', 'AWAITING_APPROVAL', 'FAILED', 'INTERRUPTED'].includes(session.state)
-      if (recovering) {
-        session.state = 'INTERRUPTED'; session.paused = true
-        session.error = 'Execution was interrupted. Review pending work and choose Continue.'
-      }
-      if (recovering || held.length) await this.commit(session, 'recovered', {}, held.map(turn => ({ dataset: 'turn_queue', operation: 'upsert', values: record(turn.id, session.conversationId, 'PENDING', turn) })))
-      await this.ports.project(session, true)
-    }
+    // Each row holds a whole conversation, so rows are read in small pages and a settled conversation keeps only its state;
+    // holding every conversation (and rewriting every chat file) at startup ran the backend out of memory.
+    let cursor: string | undefined
+    do {
+      const page = await boundedQuery(this.repository.data.dataset<DurableRecord>('sessions'), { where: {}, cursor, limit: 20 })
+      cursor = page.cursor
+      for (const row of page.rows) await this.restoreOne(row.payload as unknown as SessionSnapshot)
+    } while (cursor)
   }
 
+  private async restoreOne(session: SessionSnapshot): Promise<void> {
+    if (await this.repository.get('conversation_deletions', session.conversationId)) return
+    this.sessions.set(session.conversationId, session)
+    this.committed.add(session.conversationId)
+    for (const turn of [...session.queue]) if (turn.admissionPending) await this.rejectAdmission(turn, new Error('Message admission was interrupted before dispatch. Submit a new instruction.'))
+    const held = session.queue.filter(turn => turn.admissionPending === false)
+    for (const turn of held) turn.editing = true
+    const recovering = !['IDLE', 'AWAITING_QUESTION', 'AWAITING_APPROVAL', 'FAILED', 'INTERRUPTED'].includes(session.state)
+    if (recovering) {
+      session.state = 'INTERRUPTED'; session.paused = true
+      session.error = 'Execution was interrupted. Review pending work and choose Continue.'
+    }
+    if (recovering || held.length) await this.commit(session, 'recovered', {}, held.map(turn => ({ dataset: 'turn_queue', operation: 'upsert', values: record(turn.id, session.conversationId, 'PENDING', turn) })))
+    // The transcript is projected once more (it may have missed its last write), then a settled conversation keeps only its state.
+    await this.ports.project(session, true)
+    if (session.thread && !recovering && !session.queue.length && !['telegram', 'whatsapp'].includes(session.thread.source ?? '')) { delete session.thread; this.unloaded.add(session.conversationId) }
+  }
+
+  // A conversation restored without its messages reads them from its stored row before any use or write.
+  private async hydrate(session: SessionSnapshot, api?: OwnerApi): Promise<void> {
+    const id = session.conversationId
+    if (!this.unloaded.has(id)) return
+    const stored = await this.scoped(api).get<SessionSnapshot>('sessions', id).catch(() => this.repository.get<SessionSnapshot>('sessions', id))
+    if (!this.unloaded.has(id)) { session.thread ??= structuredClone(this.sessions.get(id)?.thread); return }
+    if (!stored?.thread) throw new Error('Conversation is unavailable')
+    session.thread = stored.thread
+    const live = this.sessions.get(id)
+    if (live && live !== session) live.thread = structuredClone(stored.thread)
+    this.unloaded.delete(id)
+  }
+
+  // A settled conversation restored at startup has no messages here until load() or a change reads them.
   snapshot(id: string): SessionSnapshot | null { return transportValue(this.sessions.get(id) ?? null) }
+
+  async load(id: string, api?: OwnerApi): Promise<SessionSnapshot | null> {
+    const session = this.sessions.get(id)
+    if (session) await this.hydrate(session, api)
+    return this.snapshot(id)
+  }
 
   async initialize(thread: AiChatThread, api?: OwnerApi): Promise<SessionSnapshot> {
     return this.serial(thread.id, async () => {
       const existing = this.sessions.get(thread.id)
-      if (existing) return structuredClone(existing)
+      if (existing) { await this.hydrate(existing, api); return structuredClone(existing) }
       const session: SessionSnapshot = { conversationId: thread.id, revision: 0, state: 'IDLE', runId: null, streamingText: '', queue: [], paused: false, error: null, context: null, thread: structuredClone(thread) }
       this.sessions.set(thread.id, session)
       await this.commit(session, 'created', {}, [{ dataset: 'conversation_deletions', operation: 'delete', key: { id: thread.id } }], api)
@@ -82,7 +135,7 @@ export class SessionCoordinator {
       for (const turn of this.sessions.get(id)?.queue ?? []) this.turnOwners.delete(turn.id)
       const current = this.sessions.get(id)?.currentTurn
       if (current) this.turnOwners.delete(current.id)
-      this.continuationOwners.delete(id); this.committed.delete(id)
+      this.continuationOwners.delete(id); this.committed.delete(id); this.unloaded.delete(id)
       this.sessions.delete(id)
     })
   }
@@ -94,7 +147,7 @@ export class SessionCoordinator {
       const session = this.sessions.get(id), turns = [...(session?.queue ?? []), ...(session?.currentTurn ? [session.currentTurn] : [])].map(turn => turn.id)
       for (const [turn, result] of this.turnResults) if (result.snapshot.conversationId === id) { this.turnResults.delete(turn); turns.push(turn) }
       for (const turn of turns) { this.turnOwners.delete(turn); this.rejectedAdmissions.delete(turn) }
-      this.continuationOwners.delete(id); this.committed.delete(id); this.sessions.delete(id); this.notify()
+      this.continuationOwners.delete(id); this.committed.delete(id); this.unloaded.delete(id); this.sessions.delete(id); this.notify()
       return [...new Set(turns)].sort()
     })
   }
@@ -102,6 +155,7 @@ export class SessionCoordinator {
   async change(id: string, operation: (thread: AiChatThread) => Promise<{ turn?: TurnSubmission; effects?: Parameters<AssistantRepository['commit']>[3] }>, api?: OwnerApi): Promise<void> {
     await this.serial(id, async () => {
       const session = this.sessions.get(id)
+      if (session) await this.hydrate(session, api)
       if (!session?.thread || this.active.get(id) && !this.active.get(id)!.completed) throw new Error('Conversation must be idle before this action')
       const changed = structuredClone(session.thread)
       const { turn: input, effects = [] } = await operation(changed)
@@ -131,12 +185,16 @@ export class SessionCoordinator {
 
   private async commit(session: SessionSnapshot, type: string, payload: unknown, effects: Parameters<AssistantRepository['commit']>[3] = [], api?: OwnerApi, publish = true): Promise<SessionEvent> {
     try {
+      await this.hydrate(session, api)
       const event = await this.scoped(api).commit(session, type, payload, effects)
-      this.committed.set(session.conversationId, structuredClone(session))
+      this.committed.add(session.conversationId)
       if (publish) { this.ports.publish(transportValue(session), transportValue(event), api); this.notify() }
       return event
     } catch (error) {
-      const previous = this.committed.get(session.conversationId)
+      // A conversation that was committed before goes back to its stored row.
+      const stored = (repository: AssistantRepository) => repository.get<SessionSnapshot>('sessions', session.conversationId)
+      const previous = this.committed.has(session.conversationId) ? await stored(this.scoped(api)).catch(() => stored(this.repository)).catch(() => undefined) : null
+      if (previous === undefined) throw error
       if (previous) {
         for (const key of Object.keys(session)) delete (session as unknown as Record<string, unknown>)[key]
         Object.assign(session, structuredClone(previous))
@@ -161,7 +219,7 @@ export class SessionCoordinator {
         session = { conversationId: input.conversationId, revision: 0, state: 'IDLE', runId: null, streamingText: '', queue: [], paused: false, error: null, context: null, thread: structuredClone(input.thread) }
         this.sessions.set(input.conversationId, session)
       }
-      const turn: QueuedTurn = { admissionPending: input.admissionPending, targetReference: input.targetReference, inputFingerprint: input.inputFingerprint, questionId: input.questionId, callbackData: input.callbackData, channelActor: input.channelActor, origin: input.origin, id: input.id, conversationId: input.conversationId, text: input.text, attachments: input.attachments ?? [], createdAt: Date.now(), priority: 0, editing: false }
+      const turn: QueuedTurn = { admissionPending: input.admissionPending, targetReference: input.targetReference, targetFallback: input.targetFallback, inputFingerprint: input.inputFingerprint, questionId: input.questionId, callbackData: input.callbackData, channelActor: input.channelActor, origin: input.origin, id: input.id, conversationId: input.conversationId, text: input.text, attachments: input.attachments ?? [], createdAt: Date.now(), priority: 0, editing: false }
       session.queue.push(turn)
       if (session.state === 'IDLE') session.state = 'QUEUED'
       await this.commit(session, 'enqueued', turn, [{ dataset: 'conversation_deletions', operation: 'delete', key: { id: input.conversationId } }, { dataset: 'turn_queue', operation: 'insert', values: record(turn.id, turn.conversationId, 'PENDING', turn) }, ...turn.attachments.flatMap(attachment => attachment.id ? [{ dataset: 'attachment_refs', operation: 'upsert' as const, values: { attachmentId: attachment.id, chatId: input.conversationId } }] : []), ...effects], api)
@@ -176,6 +234,7 @@ export class SessionCoordinator {
       admission.check()
       const session = this.sessions.get(id)
       if (!session) throw new Error('Conversation is unavailable')
+      await this.hydrate(session, api)
       const candidate = structuredClone(session), turn = candidate.queue.find(value => value.id === turnId)
       if (!turn?.admissionPending) return structuredClone(session)
       turn.admissionPending = false
@@ -252,14 +311,25 @@ export class SessionCoordinator {
   }
 
   async stop(id: string, api?: OwnerApi): Promise<void> {
-    await this.serial(id, async () => {
-      const session = this.sessions.get(id)
-      if (!session) return
-      session.paused = true
-      await this.commit(session, 'stop.requested', {}, [], api)
-      this.active.get(id)?.controller.abort()
-      if (!this.active.has(id)) { session.state = 'INTERRUPTED'; await this.commit(session, 'interrupted', {}, [], api) }
-    })
+    const done = markChatStopping(id)
+    try {
+      await this.bounded(this.serial(id, async () => {
+        const session = this.sessions.get(id)
+        if (!session) return
+        session.paused = true
+        await this.commit(session, 'stop.requested', {}, [], api)
+        this.active.get(id)?.controller.abort()
+        if (!this.active.has(id)) { session.state = 'INTERRUPTED'; await this.commit(session, 'interrupted', {}, [], api) }
+      }), 'Saving is slow').catch(error => {
+        if (!(error instanceof StalledSave)) throw error
+        // A stalled save must not hold Stop: stop now, show it, and let the stop record follow the stalled write.
+        const session = this.sessions.get(id)
+        this.active.get(id)?.controller.abort()
+        if (!session) return
+        session.paused = true
+        this.show(session, session.currentTurn ? { state: 'INTERRUPTED', streamingText: '', error: null } : {}, api)
+      })
+    } finally { done() }
   }
 
   async resume(id: string, api?: OwnerApi): Promise<void> {
@@ -276,6 +346,20 @@ export class SessionCoordinator {
     })
   }
 
+  // A durable write that stops answering must not hold the conversation: the caller gets a plain error after a bound while the write keeps its place in order.
+  private bounded<T>(work: Promise<T>, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const stall = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => reject(new StalledSave(message)), this.saveTimeoutMs) })
+    void work.catch(() => {})
+    return Promise.race([work, stall]).finally(() => clearTimeout(timer))
+  }
+
+  private show(session: SessionSnapshot, patch: Partial<SessionSnapshot>, api?: OwnerApi): void {
+    const visible = { ...structuredClone(session), paused: true, ...patch }
+    this.ports.publish(transportValue(visible), transportValue({ id: crypto.randomUUID(), conversationId: session.conversationId, revision: session.revision, type: 'save.stalled', payload: {}, createdAt: Date.now() } satisfies SessionEvent), api)
+    this.notify()
+  }
+
   private schedule(): void {
     if (this.closing) return
     const occupied = () => [...this.active.values()].filter(value => value.occupied).length
@@ -286,23 +370,24 @@ export class SessionCoordinator {
     for (const session of this.sessions.values()) {
       if (occupied() >= this.concurrency) break
       if (this.active.has(session.conversationId) || session.paused || session.state !== 'QUEUED' || session.queue[0]?.editing || session.queue[0]?.admissionPending || this.rejectedAdmissions.has(session.currentTurn?.id ?? session.queue[0]?.id ?? '')) continue
-      const active = { controller: new AbortController(), steer: false, occupied: true, completed: false, task: Promise.resolve(), api: this.turnOwners.get(session.currentTurn?.id ?? session.queue[0]?.id ?? '') ?? this.continuationOwners.get(session.conversationId) }
+      const active = { controller: new AbortController(), steer: false, occupied: true, completed: false, untouched: false, task: Promise.resolve(), api: this.turnOwners.get(session.currentTurn?.id ?? session.queue[0]?.id ?? '') ?? this.continuationOwners.get(session.conversationId) }
       this.active.set(session.conversationId, active)
       active.task = this.execute(session, active)
       void active.task.catch(() => {})
     }
   }
 
-  private async execute(session: SessionSnapshot, active: { controller: AbortController; steer: boolean; occupied: boolean; completed: boolean; api?: OwnerApi }): Promise<void> {
+  private async execute(session: SessionSnapshot, active: { controller: AbortController; steer: boolean; occupied: boolean; completed: boolean; untouched: boolean; api?: OwnerApi }): Promise<void> {
     const id = session.conversationId, api = active.api
     const ownerTurnId = session.currentTurn?.id ?? session.queue[0]?.id
-    let failure: unknown
+    let failure: unknown, landed = false, intendedPaused = false
     const change = (type: string, payload: unknown, apply: () => void) => this.serial(id, async () => { apply(); await this.commit(session, type, payload, [], api) })
     try {
       let turn: QueuedTurn | undefined
-      await this.serial(id, async () => {
+      await this.bounded(this.serial(id, async () => {
         turn = session.currentTurn ? undefined : session.queue.shift()
         session.currentTurn ??= turn
+        active.untouched = Boolean(turn && !turn.text.trim().startsWith('/') && !turn.callbackData)
         if (session.currentTurn?.channelActor && session.thread) {
           session.thread.channelSenderId = session.currentTurn.channelActor.senderId
           session.thread.channelTopicId = session.currentTurn.channelActor.topicId
@@ -310,11 +395,12 @@ export class SessionCoordinator {
         }
         session.state = 'PREPARING'; session.runId = crypto.randomUUID(); session.error = null
         await this.commit(session, 'started', { turnId: session.currentTurn?.id }, turn ? [{ dataset: 'turn_queue', operation: 'upsert', values: record(turn.id, id, 'ACTIVE', turn) }] : [], api)
-      })
+      }), 'Saving the conversation is taking too long, so nothing was sent. Press Continue to try again.')
       await this.ports.run(session, turn, {
         api, signal: active.controller.signal, shouldSteer: () => active.steer,
-        state: async state => {
+        state: async (state, tool) => {
           const waiting = state === 'AWAITING_APPROVAL' || state === 'AWAITING_QUESTION'
+          if (state !== 'INFERRING' && state !== 'COMPACTING' && !(tool && catalogTools.has(tool))) active.untouched = false
           if (!waiting && !active.occupied) await new Promise<void>((resolve, reject) => {
             const abort = () => { this.capacityWaiters = this.capacityWaiters.filter(value => value !== waiter); reject(new Error('Execution interrupted')) }
             const waiter = { id, resume: () => { active.controller.signal.removeEventListener('abort', abort); resolve() } }
@@ -328,41 +414,58 @@ export class SessionCoordinator {
         },
         message: message => {
           const value = { ...message, id: message.id ?? crypto.randomUUID() }
+          if (touchesEffects(value, session.thread!.messages)) active.untouched = false
           return change('message', value, () => { if (!session.thread!.messages.some(item => item.id === value.id)) session.thread!.messages.push(value); session.streamingText = '' })
         },
         stream: text => change('stream', {}, () => { session.streamingText = text }),
         context: usage => change('context', usage, () => { session.context = usage }),
         update: update => change('conversation.updated', {}, () => update(session.thread!))
       })
-      await this.serial(id, async () => {
+      await this.bounded(this.serial(id, async () => {
         if (active.controller.signal.aborted) throw new Error('Execution interrupted')
         if (session.thread?.plan?.status === 'review' && session.queue.length) session.thread.plan.status = 'changes'
         session.state = session.thread?.plan?.status === 'review' || session.thread?.quiz?.source.startsWith('assistant-question:') ? 'AWAITING_QUESTION' : session.queue.length ? 'QUEUED' : 'IDLE'
-        session.paused = session.state === 'AWAITING_QUESTION'
+        session.paused = intendedPaused = session.state === 'AWAITING_QUESTION'
         const finished = session.currentTurn
         session.currentTurn = undefined
         await this.commit(session, 'finished', {}, finished ? [{ dataset: 'turn_queue', operation: 'upsert', values: record(finished.id, id, 'COMPLETED', finished) }] : [], api)
-      })
+        landed = true
+      }), 'The reply is done, but saving it is taking too long. It stays in this chat; nothing else runs until you continue.')
     } catch (error) {
       failure = error
-      await this.serial(id, async () => {
+      const settle = async () => {
         if (session.streamingText) session.thread?.messages.push({ id: crypto.randomUUID(), role: 'assistant', content: session.streamingText, ts: Date.now(), error: true })
+        if (!active.steer && !active.controller.signal.aborted) session.thread?.messages.push(failureReply(session.runId, error))
+        if (!active.steer && active.controller.signal.aborted) { const stopped = session.thread?.messages.find(message => message.role === 'user' && message.id === session.currentTurn?.id); if (stopped) stopped.stopped = true }
         session.streamingText = ''
         session.state = active.steer ? 'QUEUED' : active.controller.signal.aborted ? 'INTERRUPTED' : 'FAILED'
         session.paused = !active.steer
         if (active.steer) session.currentTurn = undefined
         session.error = active.controller.signal.aborted ? null : String(error)
-        await this.commit(session, 'interrupted', { error: session.error }, [], api)
-      })
+        await this.commit(session, 'interrupted', { error: session.error }, [], active.api)
+      }
+      if (error instanceof StalledSave) {
+        // Show the stall now and hold the queue; the durable record follows the stalled write instead of waiting behind it.
+        session.paused = true
+        this.show(session, { state: active.controller.signal.aborted ? 'INTERRUPTED' : 'FAILED', streamingText: '', error: active.controller.signal.aborted ? null : String(error) }, active.api)
+        void this.serial(id, async () => {
+          if (!landed) return settle()
+          if (session.paused === intendedPaused) return
+          session.paused = intendedPaused
+          await this.commit(session, 'save.recovered', {}, [], active.api)
+          this.schedule()
+        }).catch(() => {})
+      } else await this.serial(id, settle)
     } finally {
       if (ownerTurnId && session.currentTurn?.id !== ownerTurnId) this.turnOwners.delete(ownerTurnId)
       active.completed = true; active.occupied = false; this.schedule()
-      try { await this.ports.project(session, false, api) }
+      try { await this.ports.project(session, false, active.api) }
       catch (error) { failure ??= error; throw error }
       finally {
         if (ownerTurnId) {
-          this.turnResults.set(ownerTurnId, { snapshot: structuredClone(session), ...(failure ? { error: failure } : {}) })
-          if (this.turnResults.size > 256) this.turnResults.delete(this.turnResults.keys().next().value!)
+          this.turnResults.set(ownerTurnId, { snapshot: structuredClone(session), ...(failure ? { error: failure } : {}), ...(failure && active.controller.signal.aborted && !active.steer && active.untouched ? { untouched: true } : {}) })
+          // Each result holds a whole conversation; a waiter whose result was dropped reads the session instead.
+          if (this.turnResults.size > 32) this.turnResults.delete(this.turnResults.keys().next().value!)
         }
         this.active.delete(id); this.notify(); this.schedule()
       }
@@ -370,7 +473,16 @@ export class SessionCoordinator {
   }
 
   async waitForTurn(id: string, turnId?: string, signal?: AbortSignal): Promise<SessionSnapshot> {
-    const cancel = () => { const session = this.sessions.get(id); if (!turnId || session?.currentTurn?.id === turnId) this.active.get(id)?.controller.abort(); this.notify() }
+    // A cancelled caller's turn never runs later: a running turn is stopped, a still-queued one is withdrawn from the queue.
+    let withdrawing: Promise<void> | undefined
+    const cancel = () => {
+      const session = this.sessions.get(id), active = this.active.get(id)
+      // The caller's operation closes with this cancel, so the stopped run records INTERRUPTED through the background repository, as withdraw does; its late content keeps the closed owner and is still rejected.
+      if (turnId && active && session?.currentTurn?.id === turnId) active.api = undefined
+      if (!turnId || session?.currentTurn?.id === turnId) active?.controller.abort()
+      else if (session?.queue.some(turn => turn.id === turnId)) withdrawing ??= this.withdraw(id, turnId)
+      this.notify()
+    }
     signal?.addEventListener('abort', cancel)
     try {
       for (;;) {
@@ -379,8 +491,12 @@ export class SessionCoordinator {
         this.changed.add(wake)
         try {
           const result = turnId ? this.turnResults.get(turnId) : undefined
-          if (result) { if (result.error) throw result.error; return structuredClone(result.snapshot) }
-          if (signal?.aborted) { cancel(); await this.active.get(id)?.task.catch(() => {}); throw signal.reason ?? new Error('Execution cancelled') }
+          if (result) { if (result.error) throw signal?.aborted && result.untouched ? notApplied(signal.reason) : result.error; return structuredClone(result.snapshot) }
+          if (signal?.aborted) {
+            cancel(); await withdrawing
+            if (!turnId || this.sessions.get(id)?.currentTurn?.id === turnId) await this.active.get(id)?.task.catch(() => {})
+            throw turnId && this.turnResults.get(turnId)?.untouched ? notApplied(signal.reason) : signal.reason ?? new Error('Execution cancelled')
+          }
           const session = this.sessions.get(id)
           if (!session) throw new Error('Conversation is unavailable')
           const active = this.active.get(id)
@@ -392,6 +508,21 @@ export class SessionCoordinator {
         } finally { this.changed.delete(wake) }
       }
     } finally { signal?.removeEventListener('abort', cancel) }
+  }
+
+  private withdraw(id: string, turnId: string): Promise<void> {
+    return this.serial(id, async () => {
+      const session = this.sessions.get(id)
+      if (!session) return
+      if (session.currentTurn?.id === turnId) { this.active.get(id)?.controller.abort(); return }
+      const turn = session.queue.find(value => value.id === turnId)
+      if (!turn) return
+      session.queue = session.queue.filter(value => value.id !== turnId)
+      if (!session.queue.length && !this.active.has(id) && session.state === 'QUEUED') session.state = 'IDLE'
+      // The caller's own operation is already cancelled, so the background repository records the withdrawal.
+      await this.commit(session, 'queue.changed', { turnId, withdrawn: true }, [{ dataset: 'turn_queue', operation: 'upsert', values: record(turnId, id, 'REMOVED', turn) }])
+      this.turnOwners.delete(turnId)
+    }).catch(() => {})
   }
 
   async close(): Promise<void> {

@@ -7,6 +7,38 @@ import { validateContent } from './capabilities'
 import { listConversationAttachments } from '../attachments'
 import { channelManager } from './manager'
 import { VAULT_ROOT } from '../runtime'
+import { ChannelChoices } from './actions'
+import { contentHash } from '../configuration/markdown'
+import type { AssistantRepository } from '../persistence/repositories'
+
+/**
+ * Buttons the model sends carry bound reply handles instead of its raw values, so a tap comes back as the button's
+ * label from the same sender, exactly as if they had typed it. Handle IDs derive from the delivery so a retried send
+ * reuses them.
+ */
+async function bindModelButtons(repository: AssistantRepository, deliveryId: string, destination: MessageDestination, senderId: string, content: MessageContent): Promise<{ content: MessageContent; handles: string[] }> {
+  const choices = new ChannelChoices(repository), handles: string[] = [], actor = { channelId: destination.channelId!, chatRef: destination.chatRef!, senderId }
+  const handle = async (value: string, label: string) => {
+    const id = await choices.issueReply(`choice:${contentHash(`${deliveryId}:${handles.length}`).slice(0, 32)}`, destination.conversationId, value, label, actor)
+    handles.push(id); return id
+  }
+  if (content.type === 'buttons') {
+    const bound = []
+    for (const choice of content.choices) bound.push({ ...choice, value: await handle(choice.value, choice.label) })
+    return { content: { ...content, choices: bound }, handles }
+  }
+  if (content.type === 'list') {
+    const sections = []
+    for (const section of content.sections) { const rows = []; for (const row of section.rows) rows.push({ ...row, id: await handle(row.id, row.title) }); sections.push({ ...section, rows }) }
+    return { content: { ...content, sections }, handles }
+  }
+  if (content.type === 'keyboard' && content.mode !== 'reply') {
+    const rows = []
+    for (const row of content.rows) { const bound = []; for (const button of row) bound.push('value' in button ? { ...button, value: await handle(button.value, button.label) } : button); rows.push(bound) }
+    return { content: { ...content, rows }, handles }
+  }
+  return { content, handles }
+}
 
 const text = z.string().max(32000)
 const id = z.string().min(1).max(256)
@@ -47,6 +79,8 @@ export function stickerCapabilities(input: { mime: string; metadata?: ChannelMed
 
 export function registerChannelTools(registry: ToolRegistry, bus: ChannelBus, options: {
   destination?: MessageDestination
+  senderId?: string
+  repository?: AssistantRepository
   planning: boolean
   automaticReply?: boolean
   authorizeExternal?: (context: ToolExecutionContext, input: { destination: MessageDestination; content: MessageContent }) => Promise<unknown>
@@ -66,7 +100,15 @@ export function registerChannelTools(registry: ToolRegistry, bus: ChannelBus, op
     if (!options.authorizeExternal) throw new Error('Channel sends require the core command broker authorization')
     await options.authorizeExternal(context, { destination: options.destination, content: input.content })
     context.operation.cancellation.throwIfAborted()
-    return bus.send({ id: `tool:${context.runId}:${input.deliveryKey}`, conversationId: context.conversationId, destination: options.destination, content: input.content })
+    const deliveryId = `tool:${context.runId}:${input.deliveryKey}`
+    if (!options.repository || !options.senderId || !options.destination.channelId || !options.destination.chatRef) return bus.send({ id: deliveryId, conversationId: context.conversationId, destination: options.destination, content: input.content })
+    const bound = await bindModelButtons(options.repository, deliveryId, options.destination, options.senderId, input.content)
+    const receipt = await bus.send({ id: deliveryId, conversationId: context.conversationId, destination: options.destination, content: bound.content })
+    if (bound.handles.length && ['ACCEPTED', 'DELIVERED', 'READ'].includes(receipt.state) && receipt.providerMessageIds.length === 1) {
+      const choices = new ChannelChoices(options.repository)
+      for (const id of bound.handles) await choices.bind(id, receipt.providerMessageIds[0])
+    }
+    return receipt
   } })
   registry.register({ name: 'channel_inspect_sticker', description: 'Check whether an existing sticker can be previewed, interpreted, or sent. Preserve the original when vision or animation decoding is unavailable.', group: 'messaging', parameters: z.object({ attachmentId: id }).strict(), output: z.unknown(), requiredCapabilities: [], timeoutMs: 60000, effect: 'read', guardTargets: () => [{ kind: 'tool', id: 'channel_inspect_sticker', sideEffect: 'read' }], execute: async (input, context) => {
     const found = (await listConversationAttachments(context.conversationId, context.operation.api)).find(attachment => attachment.id === input.attachmentId)

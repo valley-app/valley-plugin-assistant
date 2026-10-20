@@ -93,6 +93,33 @@ describe('durable backend message queue projections', () => {
     expect(store.getSnapshot().runningChatCount).toBe(0)
   })
 
+  it('marks a background chat blue when it finishes and red when it fails, until it is opened', async () => {
+    const backend = fixture(), store = getStore(backend.api), failure = backend.gate(), success = backend.gate(), current = backend.gate()
+    backend.model.mockImplementation(async (_session, turn) => {
+      if (turn?.text === 'Describe moss') { await failure.promise; throw new Error('Moss provider unavailable') }
+      if (turn?.text === 'Describe ferns') { await success.promise; return }
+      await current.promise
+    })
+    await store.whenReady
+    await store.send('Describe moss'); const failed = store.getSnapshot().active!.id
+    store.newChat()
+    await store.send('Describe ferns'); const finished = store.getSnapshot().active!.id
+    store.newChat()
+    await store.send('Describe lichen'); const open = store.getSnapshot().active!.id
+    await until(() => backend.model.mock.calls.length === 3)
+    expect(store.getSnapshot()).toMatchObject({ unreadChatIds: [], erroredChatIds: [] })
+    failure.resolve(); success.resolve()
+    await until(() => Boolean(store.getSnapshot().erroredChatIds?.length && store.getSnapshot().unreadChatIds?.length))
+    expect(store.getSnapshot()).toMatchObject({ unreadChatIds: [finished], erroredChatIds: [failed] })
+    current.resolve()
+    await until(() => !store.getSnapshot().busy)
+    expect(store.getSnapshot().unreadChatIds).not.toContain(open)
+    await store.openChat(finished)
+    expect(store.getSnapshot()).toMatchObject({ unreadChatIds: [], erroredChatIds: [failed] })
+    await store.openChat(failed)
+    expect(store.getSnapshot()).toMatchObject({ unreadChatIds: [], erroredChatIds: [] })
+  })
+
   it('sends the current reviewed revision and instruction identity to approval without starting a renderer run', async () => {
     const backend = fixture(), store = getStore(backend.api)
     await store.whenReady
@@ -261,4 +288,75 @@ it('discards unused project drafts on restart and saves exactly one attachment-o
   store = getStore(backend.api); await store.whenReady
   expect(store.getSnapshot().active?.id).toBe(id)
   expect(backend.model).toHaveBeenCalledTimes(1)
+})
+
+describe('per-chat binding with simultaneous chats (readiness 4.6)', () => {
+  it('runs three chats at once, keeps focus on the selected chat and keeps each result and error in its own chat', async () => {
+    const backend = fixture(), store = getStore(backend.api), gate = backend.gate()
+    backend.model.mockImplementation(async (session, turn, controls) => {
+      await controls.stream(`Working on ${turn?.text}`)
+      await gate.promise
+      if (turn?.text === 'Describe lichen') throw new Error('Lichen provider unavailable')
+      await controls.message({ role: 'assistant', content: `Answer for ${turn?.text}`, ts: Date.now() })
+    })
+    await store.whenReady
+    const ids: string[] = []
+    for (const text of ['Describe moss', 'Describe lichen', 'Describe ferns']) {
+      if (ids.length) store.newChat()
+      await store.send(text); ids.push(store.getSnapshot().active!.id)
+    }
+    await until(() => backend.model.mock.calls.length === 3)
+    await store.openChat(ids[0])
+    expect(store.getSnapshot()).toMatchObject({ active: { id: ids[0] }, runningChatCount: 3, streamingText: 'Working on Describe moss' })
+    gate.resolve()
+    await until(() => !store.getSnapshot().busy)
+    expect(store.getSnapshot()).toMatchObject({ active: { id: ids[0] }, error: null })
+    const answers = ids.map(id => backend.coordinator.snapshot(id)!.thread!.messages.filter(message => message.role === 'assistant').map(message => message.content))
+    expect(answers).toEqual([['Answer for Describe moss'], ['Working on Describe lichen', 'This request failed and did not finish: Lichen provider unavailable'], ['Answer for Describe ferns']])
+    expect(ids.map(id => backend.coordinator.snapshot(id)!.state)).toEqual(['IDLE', 'FAILED', 'IDLE'])
+    await store.openChat(ids[1])
+    expect(store.getSnapshot().error).toContain('Lichen provider unavailable')
+    await store.openChat(ids[2])
+    expect(store.getSnapshot().error).toBeNull()
+  })
+
+  it('applies a typed /clear to the chat it was typed in after the user moved to another chat', async () => {
+    const backend = fixture(), store = getStore(backend.api)
+    backend.model.mockImplementation(async (_session, turn, controls) => { await controls.message({ role: 'assistant', content: `Answer for ${turn?.text}`, ts: Date.now() }) })
+    await store.whenReady
+    await store.send('Describe moss'); const first = store.getSnapshot().active!.id
+    await until(() => backend.coordinator.snapshot(first)?.state === 'IDLE')
+    store.newChat()
+    await store.send('Describe ferns'); const second = store.getSnapshot().active!.id
+    await until(() => backend.coordinator.snapshot(second)?.state === 'IDLE')
+    await store.openChat(first)
+    const ready = backend.gate()
+    store.whenReady = ready.promise
+    const pending = store.send('/clear')
+    await store.openChat(second)
+    ready.resolve(); await pending
+    expect((await backend.api.assistant.readChat(first)).data?.thread?.messages ?? []).toEqual([])
+    expect((await backend.api.assistant.readChat(second)).data?.thread?.messages.map(message => message.content)).toContain('Answer for Describe ferns')
+    expect(store.getSnapshot()).toMatchObject({ active: { id: second }, error: null })
+    await store.openChat(first)
+    expect(store.getSnapshot().error).toBeNull()
+  })
+
+  it('keeps a failed settings save in its own chat', async () => {
+    const backend = fixture(), store = getStore(backend.api)
+    backend.model.mockImplementation(async (_session, turn, controls) => { await controls.message({ role: 'assistant', content: `Answer for ${turn?.text}`, ts: Date.now() }) })
+    await store.whenReady
+    await store.send('Describe moss'); const first = store.getSnapshot().active!.id
+    await until(() => backend.coordinator.snapshot(first)?.state === 'IDLE')
+    store.newChat()
+    await store.send('Describe ferns'); const second = store.getSnapshot().active!.id
+    await until(() => backend.coordinator.snapshot(second)?.state === 'IDLE')
+    await store.openChat(first)
+    const save = backend.api.assistant.saveChat
+    backend.api.assistant.saveChat = (async thread => thread.id === first ? { ok: false, error: 'Chat folder is read-only' } : save(thread)) as typeof save
+    store.setReasoningEffort('low')
+    await until(() => store.getSnapshot().error === 'Chat folder is read-only')
+    await store.openChat(second)
+    expect(store.getSnapshot().error).toBeNull()
+  })
 })

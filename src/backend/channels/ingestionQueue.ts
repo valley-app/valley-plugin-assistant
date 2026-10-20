@@ -19,6 +19,8 @@ export interface IngestionDependencies {
   download(channelId: string, media: InboundMediaSpec, signal: AbortSignal): Promise<{ response: Response; fileName: string; mime?: string; maxBytes: number }>
   receive(channelId: string, message: ChannelInboundMessage): Promise<void>
   error(channelId: string, error: string): void
+  /** Tells the sender their message failed before it reached a conversation, so a rejection is never silent on the channel. */
+  failed?(channelId: string, message: ChannelInboundMessage, error: string): Promise<void>
 }
 
 export class InboundMediaQueue {
@@ -145,7 +147,10 @@ export class InboundMediaQueue {
       } catch (error) {
         job.state = signal.aborted ? 'PENDING' : 'FAILED'; job.error = signal.aborted ? undefined : error instanceof Error ? error.message : String(error)
         await this.persist(job)
-        if (!signal.aborted) this.dependencies.error(job.channelId, job.error!)
+        if (!signal.aborted) {
+          this.dependencies.error(job.channelId, job.error!)
+          void this.dependencies.failed?.(job.channelId, job.message, job.error!).catch(() => undefined)
+        }
       }
     })
   }

@@ -6,13 +6,15 @@ import { datasetFixture } from './backendDatasetFixture'
 
 const fixtureHooks = vi.hoisted(() => ({
   threads: new Map<string, AiChatThread>(), channels: [] as ChannelInfo[],
-  infer: vi.fn(), dispatch: vi.fn(), ingest: vi.fn(), compile: vi.fn(), attachment: vi.fn(), importFile: vi.fn(), attachments: vi.fn(),
+  infer: vi.fn(), dispatch: vi.fn(), activity: vi.fn(), ingest: vi.fn(), compile: vi.fn(), attachment: vi.fn(), importFile: vi.fn(), attachments: vi.fn(),
   deleted: new Set<string>(), commands: [] as CustomCommand[], profiles: [] as AiPersonality[], settings: {} as Record<string, unknown>
 }))
 vi.mock('../src/backend/threads', () => ({
   readChat: async (_root: string, id: string) => structuredClone(fixtureHooks.threads.get(id) ?? null),
   saveChat: async (_root: string, thread: AiChatThread) => { if (fixtureHooks.deleted.has(thread.id)) throw new Error('Conversation deleted'); fixtureHooks.threads.set(thread.id, structuredClone(thread)) },
   clearChat: async (_root: string, id: string) => { fixtureHooks.threads.delete(id) },
+  // The fixture has no search index, so restore repairs every chat file as it did before the restore check existed.
+  chatFileCurrent: async () => false,
   readGuardOverrides: async () => null
 }))
 vi.mock('../src/backend/store', () => ({
@@ -28,7 +30,7 @@ vi.mock('../src/backend/attachments', () => ({
   assertChatWritable: async (id: string) => { if (fixtureHooks.deleted.has(id)) throw new Error('Conversation deleted') }
 }))
 vi.mock('../src/backend/ingest', () => ({ ingestAttachment: (...args: unknown[]) => fixtureHooks.ingest(...args) }))
-vi.mock('../src/backend/channels/manager', () => ({ channelManager: { list: async () => fixtureHooks.channels, dispatch: (...args: unknown[]) => fixtureHooks.dispatch(...args) } }))
+vi.mock('../src/backend/channels/manager', () => ({ channelManager: { list: async () => fixtureHooks.channels, dispatch: (...args: unknown[]) => (args[1] as { type?: string })?.type === 'activity' ? fixtureHooks.activity(...args) : fixtureHooks.dispatch(...args) } }))
 vi.mock('../src/backend/runtimes', () => ({ runNativeRuntime: (...args: unknown[]) => fixtureHooks.infer(...args), steerRuntime: vi.fn() }))
 
 import { AssistantRuntime } from '../src/backend/engine/service'
@@ -44,6 +46,8 @@ beforeEach(() => {
   ]
   fixtureHooks.infer.mockReset().mockImplementation(async (_input: unknown, _context: unknown, hooks: RuntimeHooks) => { hooks.event({ type: 'message', message: { role: 'assistant', content: 'Reply from agent.' } }) })
   fixtureHooks.dispatch.mockReset().mockResolvedValue(['provider-reply'])
+  // Typing indicators are best-effort presence signals; tests that count delivered messages see only real messages.
+  fixtureHooks.activity.mockReset().mockResolvedValue([])
   fixtureHooks.ingest.mockReset().mockResolvedValue({ text: 'Preserved attachment content' })
   fixtureHooks.compile.mockReset().mockResolvedValue({ text: 'Test instructions', hash: 'instructions' })
   fixtureHooks.attachment.mockReset(); fixtureHooks.importFile.mockReset(); fixtureHooks.attachments.mockReset().mockResolvedValue([])

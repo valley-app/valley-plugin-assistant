@@ -14,11 +14,15 @@ import { dispatchTelegram } from '../src/backend/channels/adapters/telegram'
 import { dispatchWhatsApp } from '../src/backend/channels/adapters/whatsapp'
 import { activityRequest, appendActivity } from '../src/backend/activity'
 import { importAttachment, discardAttachment, resumeAttachmentCleanup, importTransferredAttachments } from '../src/backend/attachments'
-import { deleteChat, renameChat, saveGuardOverrides, listChats, clearChat, rebuildChatSearch } from '../src/backend/threads'
+import { deleteChat, renameChat, saveGuardOverrides, listChats, clearChat, rebuildChatSearch, chatFileCurrent } from '../src/backend/threads'
 import { projectRequest, resumeProjectCleanup, executionContext, executionFile } from '../src/backend/projects'
 import { datasetFixture } from './backendDatasetFixture'
 import { encodePluginBackendOperationValue, decodePluginBackendOperationValue } from '@valley/plugin-sdk/pluginBackendOperations'
 import { transportValue } from '../src/backend/transport'
+import { clearHarnessCache, harnessCacheNamespace, readHarnessCache, writeHarnessCache } from '../src/backend/harness/cache'
+import type { HarnessCompletion } from '../src/harnessTypes'
+import { record } from '../src/backend/persistence/repositories'
+import { assertCommandOutput } from './commandContracts'
 const files = new Map<string, Uint8Array>()
 const grants = new Map<string, string>()
 const revisions = new Map<string, { content: string | null; revision: number }>()
@@ -36,8 +40,11 @@ let readOffset = 0
 const encoder = new TextEncoder(), decoder = new TextDecoder()
 const locate = (location: { handle: string; path: string }) => `${grants.get(location.handle)}/${location.path}`.replace(/\/$/, '')
 const credentials = { presence: vi.fn<PluginCredentialApi['presence']>(async () => 'stored'), state: vi.fn<PluginCredentialApi['state']>(async () => 'ok'), handle: vi.fn<PluginCredentialApi['handle']>(async () => 'opaque-handle'), set: vi.fn<PluginCredentialApi['set']>(), delete: vi.fn<PluginCredentialApi['delete']>() }
+const cacheStore = new Map<string, Map<string, { value: unknown; expiresAt?: number }>>()
+const liveCache = (namespace: string, key: string) => { const entry = cacheStore.get(namespace)?.get(key); return entry && (entry.expiresAt === undefined || entry.expiresAt > Date.now()) ? entry : undefined }
+const cachedEntries = (namespace: string) => structuredClone([...(cacheStore.get(namespace) ?? new Map<string, { value: unknown }>())].map(([key, entry]) => [key, entry.value]))
 const rpc = { handleOperation: vi.fn<PluginBackendApi['rpc']['handleOperation']>(() => () => {}), handle: vi.fn<PluginBackendApi['rpc']['handle']>(() => () => {}), emit: vi.fn() }
-const api: { agent: Pick<PluginBackendApi['agent'], 'captureTarget'>; process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: Pick<PluginBackendApi['settings'], 'get'>; data: PluginBackendApi['data']; ai: Pick<PluginBackendApi['ai'], 'onStream' | 'cancel' | 'connections' | 'models'>; policy: Pick<PluginBackendApi['policy'], 'read' | 'checkFile'>; rpc: typeof rpc; storage: Pick<PluginBackendApi['storage'], 'readDocument'|'writeDocument'|'writeDocuments'|'open'|'close'|'stat'|'readBytes'|'writeBytes'|'write'|'mkdir'|'move'|'remove'|'list'>; credentials: typeof credentials; sealed: Pick<PluginBackendApi['sealed'], 'openRead'|'readChunk'|'beginWrite'|'writeChunk'|'commitWrite'|'close'> } = {
+const api: { agent: Pick<PluginBackendApi['agent'], 'captureTarget'>; process: Pick<PluginBackendApi['process'], 'shutdown'>; settings: Pick<PluginBackendApi['settings'], 'get'>; data: PluginBackendApi['data']; ai: Pick<PluginBackendApi['ai'], 'onStream' | 'cancel' | 'connections' | 'models'>; policy: Pick<PluginBackendApi['policy'], 'read' | 'checkFile'>; rpc: typeof rpc; storage: Pick<PluginBackendApi['storage'], 'readDocument'|'writeDocument'|'writeDocuments'|'open'|'close'|'stat'|'readBytes'|'writeBytes'|'write'|'mkdir'|'move'|'remove'|'list'>; credentials: typeof credentials; cache: Pick<PluginBackendApi['cache'], 'get'|'set'|'delete'|'keys'|'clear'>; sealed: Pick<PluginBackendApi['sealed'], 'openRead'|'readChunk'|'beginWrite'|'writeChunk'|'commitWrite'|'close'> } = {
   agent: { captureTarget: vi.fn(async () => null) },
   process: { shutdown: async () => {} }, settings: { get: () => ({}) }, data: datasetFixture(), ai: { onStream: () => () => {}, cancel: async () => true, connections: async () => [], models: async () => [] },
   policy: { checkFile: async () => {}, read: async () => ({ defaultWrite: { decision: 'confirm' }, tools: {}, commands: {}, files: { visitMode: 'allow-all-except-blocked', defaultRead: { decision: 'allow' }, defaultWrite: { decision: 'confirm' }, allowedToVisit: ['**'], allowedToWrite: [], blocked: [], readOverrides: {}, writeOverrides: {} }, dangerousMode: { enabled: false, scope: 'off' }, pluginPresets: {} }) },
@@ -66,6 +73,13 @@ const api: { agent: Pick<PluginBackendApi['agent'], 'captureTarget'>; process: P
     list: async (location) => { const prefix = locate(location) + '/'; return [...new Set([...files.keys()].filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length).split('/')[0]))].map((name) => ({ name, kind: files.has(prefix + name) ? 'file' : 'directory', size: 0, mtimeMs: 1 })) }
   },
   credentials,
+  cache: {
+    get: async <T,>(namespace: string, key: string) => structuredClone(liveCache(namespace, key)?.value) as T | undefined,
+    set: vi.fn(async (namespace: string, key: string, value: unknown, options: { ttlMs?: number } = {}) => { const space = cacheStore.get(namespace) ?? new Map(); cacheStore.set(namespace, space); space.set(key, { value: structuredClone(value), expiresAt: options.ttlMs === undefined ? undefined : Date.now() + options.ttlMs }) }),
+    delete: async (namespace: string, key: string) => cacheStore.get(namespace)?.delete(key) ?? false,
+    keys: async (namespace: string, { prefix = '', limit = 1000 }: { prefix?: string; limit?: number } = {}) => { const keys = [...(cacheStore.get(namespace)?.keys() ?? [])].filter(key => key.startsWith(prefix) && liveCache(namespace, key)); return { keys: keys.slice(0, limit), more: keys.length > limit } },
+    clear: (async ({ namespace }: { namespace: string }) => { const deleted = cacheStore.get(namespace)?.size ?? 0; cacheStore.delete(namespace); return { deleted } }) as PluginBackendApi['cache']['clear']
+  },
   sealed: {
     openRead: async () => { readOffset = 0; return ledger ? { handle: 'read', bytes: ledger.length } : null },
     readChunk: async (_handle, maximum) => { const bytes = ledger!.subarray(readOffset, readOffset + Math.min(maximum ?? 1024, 7)); readOffset += bytes.length; return { base64: Buffer.from(bytes).toString('base64'), done: readOffset >= ledger!.length } },
@@ -74,9 +88,21 @@ const api: { agent: Pick<PluginBackendApi['agent'], 'captureTarget'>; process: P
     commitWrite: async () => { ledger = Buffer.concat(writing) }, close: async () => {}
   }
 }
-beforeEach(() => { files.clear(); grants.clear(); revisions.clear(); ledger = null; api.data = datasetFixture(); vi.clearAllMocks(); initBackend(api as unknown as PluginBackendApi) })
+beforeEach(() => { files.clear(); grants.clear(); revisions.clear(); cacheStore.clear(); ledger = null; api.data = datasetFixture(); vi.clearAllMocks(); initBackend(api as unknown as PluginBackendApi) })
 afterEach(async () => { await releaseFileAccess() })
 describe('Assistant package persistence', () => {
+  it('reports a failed start once as a plain message and answers requests with it', async () => {
+    const restore = vi.spyOn(AssistantRuntime.prototype, 'restore').mockRejectedValueOnce(Object.assign(new Error('Dataset response exceeds 8 MiB'), { code: 'limit-exceeded' }))
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const message = 'The Assistant could not start while restoring conversations (Dataset response exceeds 8 MiB). Restart the app; if this happens again, send Claude this message.'
+      await vi.waitFor(() => expect(rpc.emit).toHaveBeenCalledWith('backendError', message))
+      const snapshot = rpc.handle.mock.calls.find(([method]) => method === 'session.snapshot')![1]
+      await expect(Promise.resolve(snapshot({ conversationId: 'startup-chat' }))).rejects.toMatchObject({ message, code: 'ASSISTANT_NOT_STARTED', outcome: 'not-applied' })
+      expect(rpc.emit.mock.calls.filter(([name]) => name === 'backendError')).toHaveLength(1)
+    } finally { await dispose(); restore.mockRestore(); rpc.emit.mockReset() }
+  })
+
   it('times out while backend initialization is stalled and fences the late scoped submission', async () => {
     vi.useFakeTimers()
     let release!: () => void
@@ -182,6 +208,15 @@ describe('Assistant package persistence', () => {
     expect(() => executionFile(context, crypto.randomUUID(), 'fern.py')).toThrow('access changed')
   })
 
+  it('reuses the conversation already loaded for the turn instead of reading it again (4.9)', async () => {
+    const root = { id: crypto.randomUUID(), projectId: 'access-vault', path: '/vault', name: 'vault' }
+    const access = vi.fn(async () => ({ mode: 'vault' as const, root, cwd: '/vault', home: '/fixture/home' }))
+    const owner = { ...api, projects: { access } } as unknown as PluginBackendApi
+    await expect(executionContext('not-on-disk', owner)).rejects.toThrow('Conversation is unavailable')
+    expect(await executionContext('not-on-disk', owner, { id: 'not-on-disk' })).toMatchObject({ cwd: '/vault', roots: [root] })
+    await expect(executionContext('not-on-disk', owner, { id: 'other-chat' })).rejects.toThrow('Conversation is unavailable')
+  })
+
   it('lists the latest conversational preview without tool output and clears it with history', async () => {
     const thread = { id: 'preview', title: 'Moss survey', createdAt: 1, updatedAt: 2, messages: [
       { role: 'user' as const, content: 'Describe the canopy.' },
@@ -214,6 +249,37 @@ describe('Assistant package persistence', () => {
     expect(await search.get({ id: thread.id })).toBeNull()
     await deleteChat('/vault', thread.id)
     expect(await search.get({ id: thread.id })).toBeNull()
+  })
+  it('appends only new message text to the conversation search row and rebuilds it after edits or drift', async () => {
+    const dataset = api.data.dataset.bind(api.data), upserts: unknown[] = []
+    vi.spyOn(api.data, 'dataset').mockImplementation(((name: string) => { const table = dataset(name); return name === 'chat_search' ? { ...table, upsert: async (record: Parameters<typeof table.upsert>[0]) => { upserts.push(structuredClone(record)); await table.upsert(record) } } : table }) as never)
+    const search = api.data.dataset('chat_search')
+    const first = { role: 'user' as const, content: 'Find the rare fern.' }, tool = { role: 'tool' as const, content: 'Hidden tool payload' }, second = { role: 'assistant' as const, content: 'Er wächst unter dem Blätterdach.' }, edited = { role: 'user' as const, content: 'Find the moss.' }
+    const thread = { id: 'delta-chat', title: 'Farn äöü', createdAt: 1, updatedAt: 1, messages: [first] }
+    await saveChat('/vault', thread)
+    await saveChat('/vault', { ...thread, updatedAt: 2, messages: [first, tool] })
+    expect(upserts).toHaveLength(1)
+    await saveChat('/vault', { ...thread, updatedAt: 3, messages: [first, tool, second] })
+    expect(upserts).toHaveLength(2)
+    expect(upserts.at(-1)).toEqual({ id: thread.id, title: 'Farn äöü', content: 'Find the rare fern.\nEr wächst unter dem Blätterdach.', preview: 'Er wächst unter dem Blätterdach.', updatedAt: 3 })
+    await saveChat('/vault', { ...thread, updatedAt: 4, messages: [edited, second] })
+    expect(await search.get({ id: thread.id })).toMatchObject({ content: 'Find the moss.\nEr wächst unter dem Blätterdach.', updatedAt: 4 })
+    await search.upsert({ id: thread.id, title: 'Farn äöü', content: 'stale', preview: '', updatedAt: 4 })
+    await saveChat('/vault', { ...thread, updatedAt: 5, messages: [edited, second, first] })
+    expect(await search.get({ id: thread.id })).toMatchObject({ content: 'Find the moss.\nEr wächst unter dem Blätterdach.\nFind the rare fern.', preview: 'Find the rare fern.', updatedAt: 5 })
+    await saveChat('/vault', { ...thread, updatedAt: 6, messages: [] })
+    expect(await search.get({ id: thread.id })).toBeNull()
+  })
+  it('tells restore which chat files missed their last write without reading them', async () => {
+    const thread = { id: 'restored-chat', title: 'Moss survey', createdAt: 1, updatedAt: 2, messages: [{ role: 'user' as const, content: 'Count the moss.' }, { role: 'assistant' as const, content: 'Forty patches.' }] }
+    await saveChat('/vault', thread)
+    const read = vi.spyOn(api.storage, 'readBytes')
+    expect(await chatFileCurrent({ ...thread, messages: [...thread.messages, { role: 'tool' as const, content: 'Hidden tool payload' }] })).toBe(true)
+    expect(await chatFileCurrent({ ...thread, messages: [...thread.messages, { role: 'assistant' as const, content: 'One more patch.' }] })).toBe(false)
+    expect(read).not.toHaveBeenCalled()
+    await api.data.dataset('chat_search').delete({ id: thread.id })
+    expect(await chatFileCurrent(thread)).toBe(false)
+    expect(await chatFileCurrent({ ...thread, messages: [] })).toBe(true)
   })
   it('persists queued input and its attachment ownership before sending', async () => {
     const attachment = await importAttachment({ fileName: 'moss.txt', kind: 'file', bytes: new TextEncoder().encode('Moss inventory') })
@@ -277,6 +343,131 @@ describe('Assistant package persistence', () => {
       expect(owner.storage.move).toHaveBeenCalled()
       expect(owner.data.transaction).toHaveBeenCalled()
     } finally { finish?.(); await dispose(); run.mockRestore() }
+  })
+
+  it('runs send-message as a backend-owned command with no window to a terminal thread and keeps one turn per execution id', async () => {
+    await saveChat('/vault', { id: 'owned-send', title: 'Owned send', createdAt: 1, updatedAt: 1, messages: [] })
+    let finish!: () => void
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, turn, controls) => {
+      expect(turn).toMatchObject({ id: 'send-execution', targetFallback: 'sole-window' })
+      await controls.message({ id: turn!.id, role: 'user', content: turn!.text })
+      await new Promise<void>(resolve => { finish = resolve })
+      await controls.message({ role: 'assistant', content: 'Sent reply' })
+    })
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const send = rpc.handleOperation.mock.calls.find(([method]) => method === 'command.sendMessage')![1]
+      const reconcile = rpc.handleOperation.mock.calls.find(([method]) => method === 'command.sendMessage.reconcile')![1]
+      const envelope = { input: { id: 'owned-send', text: 'Write fern.md' }, execution: { id: 'send-execution', correlationId: 'send-correlation' } }
+      const result = Promise.resolve(send(envelope, operation()))
+      await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+      expect(await reconcile(envelope, operation())).toEqual({ outcome: 'pending' })
+      finish()
+      const sent = await result
+      assertCommandOutput('command.sendMessage', envelope.input, sent)
+      expect(sent).toMatchObject({ value: { id: 'owned-send', messages: [{ id: 'send-execution', role: 'user', content: 'Write fern.md' }, { role: 'assistant', content: 'Sent reply' }] } })
+      expect(await send(envelope, operation())).toMatchObject({ value: { messages: [{ id: 'send-execution' }, { content: 'Sent reply' }] } })
+      expect(run).toHaveBeenCalledOnce()
+      expect(await reconcile(envelope, operation())).toMatchObject({ outcome: 'applied', value: { id: 'owned-send', messages: [{ id: 'send-execution' }, { content: 'Sent reply' }] } })
+      expect(await reconcile({ ...envelope, execution: { id: 'never-sent' } }, operation())).toEqual({ outcome: 'not-applied' })
+      await api.data.transaction([{ dataset: 'turn_queue', operation: 'insert', values: record('withdrawn-send', 'owned-send', 'REMOVED', {}) }])
+      expect(await reconcile({ ...envelope, execution: { id: 'withdrawn-send' } }, operation())).toEqual({ outcome: 'not-applied' })
+    } finally { finish?.(); await dispose(); run.mockRestore() }
+  })
+
+  it('admits a send while window requests fill the shared bound and names the backlog when a request is refused', async () => {
+    await saveChat('/vault', { id: 'busy-send', title: 'Busy send', createdAt: 1, updatedAt: 1, messages: [] })
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, turn, controls) => {
+      await controls.message({ id: turn!.id, role: 'user', content: turn!.text })
+      await controls.message({ role: 'assistant', content: 'Busy reply' })
+    })
+    let release!: () => void
+    const held = new Promise<boolean>(resolve => { release = () => resolve(true) })
+    const process = api.process as unknown as { available?: () => Promise<boolean> }
+    process.available = () => held
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const available = rpc.handle.mock.calls.find(([method]) => method === 'harness.available')![1] as () => Promise<unknown>
+      const send = rpc.handleOperation.mock.calls.find(([method]) => method === 'command.sendMessage')![1]
+      const reads = Array.from({ length: 64 }, () => Promise.resolve(available()))
+      const refused = await Promise.resolve(available()).then(() => null, (error: unknown) => error)
+      expect(refused).toMatchObject({ message: 'Too many Assistant requests are pending', code: 'ASSISTANT_BUSY', outcome: 'not-applied', retryable: true, details: { pending: 64, turns: 0 } })
+      expect((refused as { details: { oldestAgeMs: number } }).details.oldestAgeMs).toBeGreaterThanOrEqual(0)
+      const envelope = { input: { id: 'busy-send', text: 'Still heard' }, execution: { id: 'busy-execution', correlationId: 'busy-correlation' } }
+      expect(await send(envelope, operation())).toMatchObject({ value: { id: 'busy-send', messages: [{ id: 'busy-execution', content: 'Still heard' }, { content: 'Busy reply' }] } })
+      expect(run).toHaveBeenCalledOnce()
+      release()
+      expect(await Promise.all(reads)).toHaveLength(64)
+    } finally { release(); delete process.available; await dispose(); run.mockRestore() }
+  })
+
+  it('stops a cancelled backend send and reports it not applied only while no tool beyond catalog discovery ran, from the command and from reconcile', async () => {
+    for (const id of ['cancelled-send', 'touched-send', 'discovered-send']) await saveChat('/vault', { id, title: id, createdAt: 1, updatedAt: 1, messages: [] })
+    let entered: (() => void) | undefined
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (session, turn, controls) => {
+      await controls.message({ id: turn!.id, role: 'user', content: turn!.text })
+      if (session.conversationId === 'touched-send') await controls.message({ role: 'tool', content: '{}', toolCallId: 'write' })
+      if (session.conversationId === 'discovered-send') {
+        await controls.state('INFERRING')
+        await controls.message({ role: 'assistant', content: 'I will check the file commands first.', toolCalls: [{ id: 'list', name: 'command_list', arguments: { filter: 'file' } }, { id: 'describe', name: 'command_describe', arguments: { command: 'file:create' } }] })
+        await controls.state('AWAITING_TOOLS', 'command_list')
+        await controls.state('EXECUTING_TOOLS', 'command_list')
+        await controls.message({ role: 'tool', content: '{}', toolCallId: 'list' })
+        await controls.message({ role: 'tool', content: '{}', toolCallId: 'describe' })
+        await controls.state('INFERRING')
+      }
+      entered?.()
+      await new Promise<void>((_resolve, reject) => controls.signal.addEventListener('abort', () => reject(new Error('Execution interrupted')), { once: true }))
+    })
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const command = (name: string) => rpc.handleOperation.mock.calls.find(([method]) => method === name)![1]
+      const cancel = async (id: string) => {
+        const controller = new AbortController(), envelope = { input: { id, text: 'List streams, then write fern.md' }, execution: { id: `${id}-turn` } }
+        const running = new Promise<void>(resolve => { entered = resolve })
+        const result = Promise.resolve(command('command.sendMessage')(envelope, { ...operation(), cancellation: valleyCancellationOf(controller) })).catch((error: unknown) => error)
+        await running; controller.abort()
+        return { envelope, error: await result }
+      }
+      const untouched = await cancel('cancelled-send')
+      expect(untouched.error).toMatchObject({ outcome: 'not-applied' })
+      expect(await command('command.session.snapshot')({ conversationId: 'cancelled-send' }, operation())).toMatchObject({ state: 'INTERRUPTED', currentTurn: { id: 'cancelled-send-turn' } })
+      expect(await command('command.sendMessage.reconcile')(untouched.envelope, operation())).toEqual({ outcome: 'not-applied' })
+      const touched = await cancel('touched-send')
+      expect(touched.error).toMatchObject({ message: expect.any(String) })
+      expect((touched.error as { outcome?: string }).outcome).toBeUndefined()
+      expect(await command('command.sendMessage.reconcile')(touched.envelope, operation())).toEqual({ outcome: 'pending' })
+      const discovered = await cancel('discovered-send')
+      expect(discovered.error).toMatchObject({ outcome: 'not-applied' })
+      expect(await command('command.sendMessage.reconcile')(discovered.envelope, operation())).toEqual({ outcome: 'not-applied' })
+      expect(run).toHaveBeenCalledTimes(3)
+    } finally { await dispose(); run.mockRestore() }
+  })
+
+  it('reports a cancelled send not applied when the cancelled operation API refuses every call, as the plugin runtime does', async () => {
+    await saveChat('/vault', { id: 'closed-send', title: 'closed-send', createdAt: 1, updatedAt: 1, messages: [] })
+    let entered!: () => void
+    const running = new Promise<void>(resolve => { entered = resolve })
+    const run = vi.spyOn(AssistantRuntime.prototype as unknown as { run: CoordinatorPorts['run'] }, 'run').mockImplementation(async (_session, turn, controls) => {
+      await controls.message({ id: turn!.id, role: 'user', content: turn!.text })
+      entered()
+      await new Promise<void>((_resolve, reject) => controls.signal.addEventListener('abort', () => reject(new Error('Execution interrupted')), { once: true }))
+    })
+    const controller = new AbortController()
+    const closing = <T extends object>(target: T): T => new Proxy(target, { get: (object, key, receiver) => {
+      const value = Reflect.get(object, key, receiver)
+      if (typeof value === 'function') return (...args: unknown[]) => { if (controller.signal.aborted) return Promise.reject(new Error('Plugin runtime operation is closed')); return value.apply(object, args) }
+      return value && typeof value === 'object' ? closing(value) : value
+    } })
+    const owner = closing(api) as unknown as PluginBackendOperationContext['api']
+    const dispose = register(api as unknown as PluginBackendApi)
+    try {
+      const send = rpc.handleOperation.mock.calls.find(([method]) => method === 'command.sendMessage')![1]
+      const envelope = { input: { id: 'closed-send', text: 'List streams, then write fern.md' }, execution: { id: 'closed-send-turn' } }
+      const result = Promise.resolve(send(envelope, { ...operation(owner), cancellation: valleyCancellationOf(controller) })).catch((error: unknown) => error)
+      await running; controller.abort()
+      expect(await result).toMatchObject({ outcome: 'not-applied' })
+    } finally { await dispose(); run.mockRestore() }
   })
 
   it('rejects a real chat command after its scoped write is revoked without using background storage', async () => {
@@ -618,26 +809,59 @@ describe('Assistant package persistence', () => {
     } finally { await dispose() }
   })
 
-  it('restores the exact harness cache entries cleared through the private ai rpc only while the folder is unchanged', async () => {
+  it('caches harness completions in the host cache with the harness age as TTL and skips oversized values', async () => {
+    const completion: HarnessCompletion = { text: 'Farn äöü', toolCalls: [], events: [], usage: { inputTokens: 1, outputTokens: 2 }, finishReason: 'stop', latencyMs: 3, cached: false, retries: 0 }
+    expect(await readHarnessCache('fixture', 'k', 2)).toBeNull()
+    await writeHarnessCache('fixture', 'k', completion, 2, 128)
+    expect(api.cache.set).toHaveBeenCalledWith('evaluations.fixture', 'k', expect.objectContaining({ value: completion }), { ttlMs: 2 * 86_400_000 })
+    expect(await readHarnessCache('fixture', 'k', 2)).toEqual({ ...completion, cached: true })
+    expect(await readHarnessCache('other', 'k', 2)).toBeNull()
+    vi.mocked(api.cache.set).mockClear()
+    await writeHarnessCache('fixture', 'big', { ...completion, text: 'x'.repeat(1024 * 1024) }, 2, 128)
+    expect(api.cache.set).not.toHaveBeenCalled()
+    expect(await readHarnessCache('fixture', 'big', 2)).toBeNull()
+    expect(harnessCacheNamespace('a'.repeat(64))).toMatch(/^evaluations\.a{43}\.[0-9a-f]{8}$/)
+    await clearHarnessCache('fixture')
+    expect(await readHarnessCache('fixture', 'k', 2)).toBeNull()
+    expect([...files.keys()].some(file => file.includes('cache/'))).toBe(false)
+  })
+
+  it('keeps each harness cache within its configured size, evicting the oldest entries first', async () => {
+    const completion = (text: string): HarnessCompletion => ({ text, toolCalls: [], events: [], usage: { inputTokens: 1, outputTokens: 2 }, finishReason: 'stop', latencyMs: 3, cached: false, retries: 0 })
+    const now = vi.spyOn(Date, 'now')
+    try {
+      for (const [index, key] of ['a', 'b', 'c'].entries()) {
+        now.mockReturnValue(1_000_000 + index)
+        await writeHarnessCache('fixture', key, completion(`${key} äöü ${'x'.repeat(400 * 1024)}`), 2, 1)
+      }
+      expect(cachedEntries('evaluations.fixture').map(([key]) => key)).toEqual(['b', 'c'])
+      expect(Object.keys(cacheStore.get('evaluation-sizes')?.get('evaluations.fixture')?.value as object)).toEqual(['b', 'c'])
+      await writeHarnessCache('other', 'a', completion('Moos äöü'), 2, 1)
+      expect(cachedEntries('evaluations.other').map(([key]) => key)).toEqual(['a'])
+      await clearHarnessCache('fixture')
+      expect(cacheStore.get('evaluation-sizes')?.has('evaluations.fixture')).toBe(false)
+    } finally { now.mockRestore() }
+  })
+
+  it('restores the exact harness cache entries cleared through the private ai rpc only while the namespace is unchanged', async () => {
     const dispose = register(api as unknown as PluginBackendApi)
     const call = (method: string, input: unknown) => rpc.handle.mock.calls.find(([name]) => name === `ai.${method}`)![1](input)
-    const cache = '/vault/.valley/plugins/data/assistant/cache/evaluations/fixture'
-    const cached = () => new Map([...files].filter(([file]) => file.includes('cache/evaluations/fixture/')).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
+    const namespace = 'evaluations.fixture', cached = () => cachedEntries(namespace)
     try {
       await call('listChats', {})
-      await writeFile(`${cache}/a.json`, '{"createdAt":1,"value":{"text":"Moss äöü"}}')
-      await writeFile(`${cache}/b.json`, new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d]))
+      await api.cache.set(namespace, 'a', { createdAt: 1, value: { text: 'Moss äöü' } }, {})
+      await api.cache.set(namespace, 'b', {}, {})
       const before = cached(), snapshot = await call('captureHarnessCache', { id: 'fixture' })
       expect(await call('captureHarnessCache', { id: 'absent' })).toBeNull()
       await call('clearHarnessCache', { id: 'fixture' })
-      expect(cached().size).toBe(0)
+      expect(cached()).toEqual([])
       const expectedRevision = await call('harnessCacheRevision', { id: 'fixture' }) as string
       expect(await call('restoreHarnessCache', { snapshot, expectedRevision })).toEqual({ ok: true })
       expect(cached()).toEqual(before)
       await call('clearHarnessCache', { id: 'fixture' })
-      await writeFile(`${cache}/c.json`, '{}')
+      await api.cache.set(namespace, 'c', {}, {})
       await expect(Promise.resolve(call('restoreHarnessCache', { snapshot, expectedRevision }))).rejects.toMatchObject({ code: 'UNDO_CONFLICT_STALE_TARGET', outcome: 'not-applied' })
-      expect([...cached().keys()].map(file => file.split('/').at(-1))).toEqual(['c.json'])
+      expect(cached().map(([key]) => key)).toEqual(['c'])
     } finally { await dispose() }
   })
 
@@ -682,19 +906,20 @@ describe('Assistant package persistence', () => {
     const sealedApi = { ...api, commands: { describe: async (command: string) => ({ id: command, location: 'core' }) } } as unknown as PluginBackendApi
     const dispose = register(sealedApi)
     const operationOf = (method: string) => rpc.handleOperation.mock.calls.find(([name]) => name === method)?.[1]
-    const base = '/vault/.valley/plugins/data/assistant', runs = `${base}/evaluation-runs/fixture`, cache = `${base}/cache/evaluations/fixture`
-    const tree = () => new Map([...files].filter(([file]) => file.includes('evaluation-runs/') || file.includes('cache/evaluations/')).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
+    const base = '/vault/.valley/plugins/data/assistant', runs = `${base}/evaluation-runs/fixture`, namespace = 'evaluations.fixture'
+    const tree = () => new Map([...files].filter(([file]) => file.includes('evaluation-runs/')).map(([file, bytes]) => [file, Buffer.from(bytes).toString('base64')]))
     const record = (runId: string) => JSON.stringify({ id: runId, harnessId: 'fixture', status: 'completed' })
     try {
       await rpc.handle.mock.calls.find(([method]) => method === 'ai.listChats')![1]({})
       expect(await rpc.handle.mock.calls.find(([name]) => name === 'test.sealed')![1]({})).toBe(true)
       const older = crypto.randomUUID()
-      await writeFile(`${runs}/${older}.json`, record(older)); await writeFile(`${cache}/kept.json`, '{"createdAt":1,"value":{"text":"Moos äöü"}}')
-      const before = tree(), { captureId } = await operationOf('test.captureHarness')!({ id: 'fixture' }, operation(sealedApi as never)) as { captureId: string }
+      await writeFile(`${runs}/${older}.json`, record(older)); await api.cache.set(namespace, 'kept', { createdAt: 1, value: { text: 'Moos äöü' } }, {})
+      const before = tree(), cacheBefore = cachedEntries(namespace), { captureId } = await operationOf('test.captureHarness')!({ id: 'fixture' }, operation(sealedApi as never)) as { captureId: string }
       const runId = crypto.randomUUID()
-      await writeFile(`${runs}/${runId}.json`, record(runId)); await writeFile(`${cache}/new.json`, '{}'); await writeFile(`${cache}/kept.json`, '{"createdAt":2}')
-      expect(await operationOf('test.forgetHarness')!({ captureId, runId }, operation(sealedApi as never))).toEqual({ harnessId: 'fixture', runId, cache: ['kept.json', 'new.json'] })
+      await writeFile(`${runs}/${runId}.json`, record(runId)); await api.cache.set(namespace, 'new', {}, {}); await api.cache.set(namespace, 'kept', { createdAt: 2 }, {})
+      expect(await operationOf('test.forgetHarness')!({ captureId, runId }, operation(sealedApi as never))).toEqual({ harnessId: 'fixture', runId, cache: ['kept', 'new'] })
       expect(tree()).toEqual(before)
+      expect(cachedEntries(namespace)).toEqual(cacheBefore)
       const again = await operationOf('test.captureHarness')!({ id: 'fixture' }, operation(sealedApi as never)) as { captureId: string }, extra = crypto.randomUUID(), other = crypto.randomUUID()
       await writeFile(`${runs}/${extra}.json`, record(extra)); await writeFile(`${runs}/${other}.json`, record(other))
       const changed = tree()

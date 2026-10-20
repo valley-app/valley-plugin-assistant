@@ -263,10 +263,31 @@ export async function readChat(vaultRoot: string, id: string, api: OwnerApi = ba
   return null
 }
 
+const searchable = (messages: AiMessage[]): AiMessage[] => messages.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+
 async function indexChat(thread: AiChatThread, api: OwnerApi = backendApi()): Promise<void> {
   if (!thread.messages.length && !thread.pendingMessages?.length) { await api.data.dataset('chat_search').delete({ id: thread.id }); return }
-  const messages = thread.messages.filter(message => (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string')
+  const messages = searchable(thread.messages)
   await api.data.dataset('chat_search').upsert({ id: thread.id, title: thread.title, content: messages.map(message => message.content).join('\n'), preview: messagePreview(messages), updatedAt: thread.updatedAt })
+}
+
+async function indexChatAppend(thread: AiChatThread, existing: AiMessage[], appended: AiMessage[], api: OwnerApi): Promise<void> {
+  if (!thread.messages.length && !thread.pendingMessages?.length) return indexChat(thread, api)
+  const dataset = api.data.dataset('chat_search')
+  const row = await dataset.get({ id: thread.id })
+  const indexed = searchable(existing), length = indexed.reduce((sum, message) => sum + message.content.length, Math.max(0, indexed.length - 1))
+  if (!row || row.title !== thread.title || typeof row.content !== 'string' || row.content.length !== length || (indexed.length > 0 && !row.content.endsWith(indexed[indexed.length - 1].content))) return indexChat(thread, api)
+  const added = searchable(appended)
+  if (!added.length) return
+  const text = added.map(message => message.content).join('\n')
+  await dataset.upsert({ id: thread.id, title: thread.title, content: indexed.length ? `${row.content}\n${text}` : text, preview: messagePreview(searchable(thread.messages)), updatedAt: thread.updatedAt })
+}
+
+/** Whether the chat file already holds this conversation's messages, judged by the search index rebuilt from the files at startup. */
+export async function chatFileCurrent(thread: AiChatThread, api: OwnerApi = backendApi()): Promise<boolean> {
+  const row = await api.data.dataset('chat_search').get({ id: thread.id }).catch(() => undefined)
+  if (row === undefined) return false
+  return row ? row.content === searchable(thread.messages).map(message => message.content).join('\n') : !thread.messages.length && !thread.pendingMessages?.length
 }
 
 async function updateChatSearch(operation: () => Promise<void>, api: OwnerApi = backendApi()): Promise<void> {
@@ -305,18 +326,19 @@ export async function saveChat(vaultRoot: string, thread: AiChatThread, api: Own
   else if (prior && thread.title !== prior.title && thread.titleOrigin !== 'generated' && thread.titleOrigin !== 'fallback') { thread.titleOrigin = 'manual'; thread.titleRevision = (prior.titleRevision ?? 0) + 1 }
   await queuedWriteJson(settingsFile(dir), metaOf(thread), api)
   const file = threadFile(dir)
-  await runExclusive(file, async () => {
+  const appended = await runExclusive(file, async () => {
     const existing = await readThreadMessages(dir, api)
     const unchangedPrefix = thread.messages.length >= existing.length
       && existing.every((message, index) => JSON.stringify(message) === JSON.stringify(thread.messages[index]))
     if (unchangedPrefix) {
       const delta = thread.messages.slice(existing.length)
       if (delta.length) await fs.appendFile(file, delta.map((m) => JSON.stringify(m)).join('\n') + '\n', 'utf8', api)
-    } else {
-      await atomicWriteFile(file, thread.messages.map((m) => JSON.stringify(m)).join('\n') + (thread.messages.length ? '\n' : ''), api)
+      return { existing, delta }
     }
+    await atomicWriteFile(file, thread.messages.map((m) => JSON.stringify(m)).join('\n') + (thread.messages.length ? '\n' : ''), api)
+    return null
   }, api)
-  await updateChatSearch(() => indexChat(thread, api), api)
+  await updateChatSearch(() => appended ? indexChatAppend(thread, appended.existing, appended.delta, api) : indexChat(thread, api), api)
   }, api)
 }
 

@@ -594,6 +594,10 @@ it('shows the provider message without its JSON envelope', () => {
   expect(friendlyStreamError('Ollama HTTP 503: {"error":{"message":"Try again.","type":"unavailable"}}')).toBe('Ollama HTTP 503: Try again.')
 })
 
+it('drops the IPC method name and Error prefixes from a provider failure', () => {
+  expect(friendlyStreamError("Error invoking remote method 'ai:chat': Error: Gemini: Rate limited. Wait and retry, or switch models.")).toBe('Gemini: Rate limited. Wait and retry, or switch models.')
+})
+
 it('forwards the selected supported effort to the actual model request', async () => {
   const mock = createMockValleyApi()
   await run(mock, [{ role: 'user', content: 'Describe a fern.' }], scripted(mock, [[{ type: 'text', text: 'A fern has fronds.' }]]), {

@@ -86,15 +86,39 @@ it('groups transcript and runtime work once per turn while keeping final replies
     { role: 'user', content: 'Inspect the moss.', ts: 20 },
     { role: 'assistant', content: 'The moss is green.', ts: 25, activityRunId: 'next' }
   ], [runtime, { ...runtime, callId: 'child', parentCallId: 'read' }, { ...runtime, runId: 'next', callId: 'write', startedAt: 22, timestamp: 23 }])
-  expect(items.map(item => item.kind)).toEqual(['message', 'activity', 'message', 'message', 'activity', 'message'])
+  expect(items.map(item => item.kind)).toEqual(['message', 'message', 'activity', 'message', 'message', 'activity', 'message'])
+  expect(items[1]).toMatchObject({ kind: 'message', message: { content: 'Reading the file.' } })
   const activities = items.filter(item => item.kind === 'activity')
-  expect(activities[0].entries).toHaveLength(2)
-  expect(activities[0].entries[0].message?.content).toBe('Reading the file.')
-  expect(activities[0].entries[1].step?.callId).toBe('read')
+  expect(activities[0].entries).toHaveLength(1)
+  expect(activities[0].entries[0].step?.callId).toBe('read')
   expect(activities[1].entries).toHaveLength(1)
   expect(activities[1].entries[0].step?.callId).toBe('write')
 })
 
+
+it('keeps the opening line above the work and later text between tools inside it', () => {
+  const items = buildRenderItems([
+    { role: 'user', content: 'Create the note.', ts: 10 },
+    { role: 'assistant', content: "I'll create that note, then verify the bytes match exactly.", ts: 11, toolCalls: [{ id: 'create', name: 'file_create', arguments: {} }] },
+    { role: 'tool', content: 'ok', toolCallId: 'create', ts: 12 },
+    { role: 'assistant', content: 'Checking the size.', ts: 13, toolCalls: [{ id: 'stat', name: 'file_stat', arguments: {} }] },
+    { role: 'tool', content: '38 bytes', toolCallId: 'stat', ts: 14 },
+    { role: 'assistant', content: 'Created the note (38 bytes, verified).', ts: 15 }
+  ])
+  expect(items.map(item => item.kind === 'message' ? item.message.content : 'work')).toEqual(['Create the note.', "I'll create that note, then verify the bytes match exactly.", 'work', 'Created the note (38 bytes, verified).'])
+  const work = items.find(item => item.kind === 'activity')
+  expect(work?.kind === 'activity' && work.entries.map(entry => entry.message?.content ?? entry.call?.id)).toEqual(['create', 'Checking the size.', 'stat'])
+})
+
+it('ends a failed turn with its failure reply below the work, not above the request', () => {
+  const items = buildRenderItems([
+    { role: 'user', content: 'Create the companion note.', ts: 10 },
+    { role: 'assistant', content: "I'll create that note now.", ts: 11, toolCalls: [{ id: 'read', name: 'command_execute', arguments: {} }] },
+    { role: 'tool', content: '{"success":false}', toolCallId: 'read', ts: 12 },
+    { id: 'failure:run', role: 'assistant', content: 'This request failed and did not finish: INVALID_INPUT', failure: 'Error: INVALID_INPUT', error: true, ts: 13 }
+  ])
+  expect(items.map(item => item.kind === 'message' ? item.message.content : 'work')).toEqual(['Create the companion note.', "I'll create that note now.", 'work', 'This request failed and did not finish: INVALID_INPUT'])
+})
 
 it('uses run boundaries for elapsed time instead of adding overlapping tool durations', () => {
   const items = buildRenderItems([

@@ -217,7 +217,7 @@ async function safeRun(tool: AgentTool, args: Record<string, unknown>, opts?: im
 }
 
 export function friendlyStreamError(error: string): string {
-  error = redactSecrets(error)
+  error = redactSecrets(error).replace(/^(?:Error invoking remote method ['"][^'"]+['"]:\s*)?(?:Error:\s*)*/, '').trim()
   const jsonStart = error.indexOf('{')
   if (jsonStart >= 0) {
     try {

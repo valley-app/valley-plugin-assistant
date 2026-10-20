@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
 import { valleyCancellationOf } from '@valley/plugin-sdk/valleyCancellation'
 import type { AiChatRequest, AiStreamEvent } from '../../src/types'
-import { bridgeModel } from '../../src/backend/runtimes/model'
+import { bridgeModel, recoverInterruptedTools } from '../../src/backend/runtimes/model'
 
 function fixture() {
   const controller = new AbortController(), off = vi.fn(), active = new Map<string, string>()
@@ -40,5 +40,28 @@ describe('native provider cancellation and progress', () => {
     test.controller.abort()
     await rejected
     expect(test.complete).toHaveBeenCalledOnce()
+  })
+})
+
+describe('provider history', () => {
+  it('keeps a tool result right after its call when the tool saved a message while running', () => {
+    const history = recoverInterruptedTools([
+      { role: 'user', content: 'Open my smoke note.' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'ask', name: 'ask_user', arguments: {} }] },
+      { role: 'assistant', content: 'Which one should I open?' },
+      { role: 'tool', toolCallId: 'ask', name: 'ask_user', content: 'Question saved.' },
+      { role: 'user', content: 'The first one' }
+    ])
+    expect(history.map(message => message.role === 'tool' ? `tool:${message.content}` : `${message.role}:${message.content}`)).toEqual(['user:Open my smoke note.', 'assistant:', 'tool:Question saved.', 'assistant:Which one should I open?', 'user:The first one'])
+  })
+
+  it('still closes a call whose result never arrived', () => {
+    const history = recoverInterruptedTools([
+      { role: 'assistant', content: '', toolCalls: [{ id: 'lost', name: 'command_execute', arguments: {} }] },
+      { role: 'assistant', content: 'Saved while running' },
+      { role: 'user', content: 'Next' }
+    ])
+    expect(history.map(message => message.role)).toEqual(['assistant', 'tool', 'assistant', 'user'])
+    expect(history[1]).toMatchObject({ toolCallId: 'lost', content: expect.stringContaining('interrupted') })
   })
 })

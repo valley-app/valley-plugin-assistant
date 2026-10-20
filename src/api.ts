@@ -3,7 +3,7 @@ import type { HarnessEvent } from './harnessTypes'
 import type { ValleyPluginApi as HostApi } from '@valley/plugin-sdk'
 import type { DriverResult } from '@valley/plugin-sdk/types'
 import type { ChannelsInfo, AiStreamEvent, ChannelMessage } from './types'
-import type { AiDriver, ChannelDriver, AiBalanceResult, AiCacheStatsResult, AiChatListResult, AiChatStartResult, AiChatThreadResult, AiCommandsResult, AiConfigResult, AiConnectionsResult, AiGuardOverridesResult, AiGuardResult, AiHarnessPackageResult, AiHarnessRunResult, AiHarnessRunsResult, AiHarnessesResult, AiMemoryResult, AiModelsResult, AiOllamaStatusResult, AiPendingResult, AiPersonalitiesResult, AiPersonalityResult, AiProvidersResult, AiUsageResult, ChannelsResult } from './apiTypes'
+import type { AiDriver, ChannelDriver, AiBalanceResult, AiChatListResult, AiChatStartResult, AiChatThreadResult, AiCommandsResult, AiConfigResult, AiConnectionsResult, AiGuardOverridesResult, AiGuardResult, AiHarnessPackageResult, AiHarnessRunResult, AiHarnessRunsResult, AiHarnessesResult, AiMemoryResult, AiModelsResult, AiOllamaStatusResult, AiPendingResult, AiPersonalitiesResult, AiPersonalityResult, AiProvidersResult, AiUsageResult, ChannelsResult } from './apiTypes'
 export type ValleyPluginApi = HostApi & { assistant: AiDriver; channels: ChannelDriver }
 const configurations = new WeakMap<object, { ready(): Promise<void>; dispose(): void }>()
 export function assistantConfigurationReady(api: ValleyPluginApi): Promise<void> { return configurations.get(api)?.ready() ?? Promise.resolve() }
@@ -53,7 +53,6 @@ export function createAssistantApi(api: HostApi): ValleyPluginApi {
         getConfig: () => driverCall('ai', 'getConfig', {}) as Promise<AiConfigResult>,
         writeRule: (name, content, expectedRevision) => driverCall('ai', 'writeRule', { name, content, expectedRevision }),
         getGuard: () => driverCall('ai', 'getGuard', {}) as Promise<AiGuardResult>,
-        saveGuard: async (policy) => { try { return { ok: true, data: { guard: await api.policy.save(policy) } } } catch (error) { return { ok: false, error: String(error) } } },
         appendGuardAudit: (entry) => driverCall('ai', 'appendGuardAudit', { entry }),
         addPending: (record) => driverCall('ai', 'addPending', { record }),
         removePending: (requestId) => driverCall('ai', 'removePending', { requestId }),

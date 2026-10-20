@@ -3,12 +3,13 @@ import type { DatasetRecord } from '@valley/plugin-sdk/datasets'
 import { join } from 'path-browserify'
 import { z } from 'zod'
 import * as fs from './filesystem'
-import { atomicWriteFile } from './filesystem'
 import { captureChat, chatEntriesOf, rewriteChat, type ChatSnapshot } from './threads'
 import { runtimeScope, stopChatProcesses } from './processScopes'
 import { harnessRunActive } from './harness/runner'
-import { ASSISTANT_DIR, ASSISTANT_HARNESS_CACHE_DIR, ASSISTANT_HARNESS_RUNS_DIR } from './constants'
+import { harnessCacheEntries, harnessCacheNamespace, writeHarnessCacheEntry, type HarnessCacheEntry } from './harness/cache'
+import { ASSISTANT_DIR, ASSISTANT_HARNESS_RUNS_DIR } from './constants'
 import type { SessionCoordinator } from './engine/coordinator'
+import { boundedQuery } from './persistence/repositories'
 type OwnerApi = PluginBackendOperationContext['api']
 
 // Sealed test fixtures only. The host publishes no test-mode flag to plugins; core registers its sealed-test usage inverse
@@ -27,7 +28,7 @@ async function rows(api: OwnerApi, dataset: string, where: Record<string, string
   const result: Row[] = []
   let cursor: string | undefined
   do {
-    const page = await api.data.dataset<Row>(dataset).query({ where, cursor, limit: 500 })
+    const page = await boundedQuery(api.data.dataset<Row>(dataset), { where, cursor, limit: 500 })
     result.push(...page.rows.map(row => JSON.parse(JSON.stringify(row)) as Row))
     if (result.length > limit) return null
     cursor = page.cursor
@@ -38,19 +39,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const exists = async (file: string, api: OwnerApi) => { const parent = file.slice(0, file.lastIndexOf('/')), name = file.slice(file.lastIndexOf('/') + 1); return (await fs.readdir(parent, { withFileTypes: true }, api).catch(() => [])).some(entry => entry.name === name) }
 
 type SessionCapture = { kind: 'session'; conversationId: string; chat: ChatSnapshot; instructions: Row[]; home: boolean }
-type HarnessCapture = { kind: 'harness'; harnessId: string; folders: Record<string, boolean>; runs: string[]; cache: Array<{ name: string; base64: string }> }
-const FOLDER_FILES = 256, FOLDER_BYTES = 512 * 1024
-async function flatFolder(folder: string, api: OwnerApi): Promise<Array<{ name: string; base64: string }> | null> {
-  const entries: Array<{ name: string; base64: string }> = []
-  let bytes = 0
-  for (const entry of (await fs.readdir(folder, { withFileTypes: true }, api).catch(() => [])).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
-    if (!entry.isFile() || entries.length >= FOLDER_FILES) return null
-    const read = await fs.readBoundedBase64(join(folder, entry.name), FOLDER_BYTES - bytes, api)
-    if (!read) return null
-    bytes += read.bytes; entries.push({ name: entry.name, base64: read.base64 })
-  }
-  return entries
-}
+type HarnessCapture = { kind: 'harness'; harnessId: string; folders: Record<string, boolean>; runs: string[]; cache: HarnessCacheEntry[] }
 
 export function createSealedTestOperations(vaultRoot: string, coordinator: Pick<SessionCoordinator, 'snapshot' | 'forget'>) {
   const captures = new Map<string, SessionCapture | HarnessCapture>()
@@ -100,31 +89,31 @@ export function createSealedTestOperations(vaultRoot: string, coordinator: Pick<
     return { conversationId: input.conversationId, turns, rows: owned.length, instructions: operations.length - owned.length }
   }
 
-  const harnessFolders = (id: string) => ({ runs: join(vaultRoot, ASSISTANT_HARNESS_RUNS_DIR, id), cache: join(vaultRoot, ASSISTANT_HARNESS_CACHE_DIR, id) })
-  const chain = (id: string) => [ASSISTANT_HARNESS_RUNS_DIR, `${ASSISTANT_HARNESS_RUNS_DIR}/${id}`, `${ASSISTANT_DIR}/cache`, ASSISTANT_HARNESS_CACHE_DIR, `${ASSISTANT_HARNESS_CACHE_DIR}/${id}`].map(rel => join(vaultRoot, rel))
+  const harnessFolders = (id: string) => ({ runs: join(vaultRoot, ASSISTANT_HARNESS_RUNS_DIR, id) })
+  const chain = (id: string) => [ASSISTANT_HARNESS_RUNS_DIR, `${ASSISTANT_HARNESS_RUNS_DIR}/${id}`].map(rel => join(vaultRoot, rel))
   const captureHarness = async (raw: unknown, api: OwnerApi) => {
     await gate(api)
     const { id } = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/) }).strict().parse(raw), folders = harnessFolders(id)
-    const runs = await fs.readdir(folders.runs, undefined, api).catch(() => [] as string[]), cache = await flatFolder(folders.cache, api)
-    if (runs.length >= 50 || !cache) throw refuse('CAPTURE_UNBOUNDED', 'The harness history or cache cannot be captured within bounds')
-    return { captureId: keep({ kind: 'harness', harnessId: id, folders: Object.fromEntries(await Promise.all(chain(id).map(async folder => [folder, await exists(folder, api)]))), runs: runs.sort(), cache }) }
+    const runs = await fs.readdir(folders.runs, undefined, api).catch(() => [] as string[]), cache = await harnessCacheEntries(id, api)
+    if (runs.length >= 50 || cache === null) throw refuse('CAPTURE_UNBOUNDED', 'The harness history or cache cannot be captured within bounds')
+    return { captureId: keep({ kind: 'harness', harnessId: id, folders: Object.fromEntries(await Promise.all(chain(id).map(async folder => [folder, await exists(folder, api)]))), runs: runs.sort(), cache: cache ?? [] }) }
   }
-  // Deletes exactly the run record the harness run wrote and returns the harness cache folder to its captured bytes.
+  // Deletes exactly the run record the harness run wrote and returns the harness cache namespace to its captured entries.
   const forgetHarness = async (raw: unknown, api: OwnerApi) => {
     await gate(api)
     const input = captureInput.extend({ runId: z.string().uuid() }).strict().parse(raw), capture = take<HarnessCapture>(input.captureId, 'harness'), folders = harnessFolders(capture.harnessId)
     if (harnessRunActive(input.runId)) throw refuse('RUN_ACTIVE', 'Cancel the harness run or wait for it before it is forgotten')
-    const record = `${input.runId}.json`, runs = (await fs.readdir(folders.runs, undefined, api).catch(() => [] as string[])).sort(), cache = await flatFolder(folders.cache, api)
+    const record = `${input.runId}.json`, runs = (await fs.readdir(folders.runs, undefined, api).catch(() => [] as string[])).sort(), current = await harnessCacheEntries(capture.harnessId, api)
     if (capture.runs.includes(record) || !same(runs, [...capture.runs, record].sort())) throw refuse('RUN_MISMATCH', 'The harness history differs from the capture plus exactly this run')
-    if (!cache) throw refuse('CAPTURE_UNBOUNDED', 'The harness cache exceeds its bounds')
+    if (current === null) throw refuse('CAPTURE_UNBOUNDED', 'The harness cache exceeds its bounds')
     const run = JSON.parse(await fs.readFile(join(folders.runs, record), 'utf8', api)) as { id?: string; harnessId?: string; status?: string }
     if (run.id !== input.runId || run.harnessId !== capture.harnessId || run.status === 'running') throw refuse('RUN_MISMATCH', 'The run record is not this finished harness run')
     captures.delete(input.captureId)
-    const kept = new Map(capture.cache.map(entry => [entry.name, entry.base64])), written = cache.filter(entry => kept.get(entry.name) !== entry.base64).map(entry => entry.name)
+    const cache = current ?? [], kept = new Map(capture.cache.map(entry => [entry.key, JSON.stringify(entry.value)])), written = cache.filter(entry => kept.get(entry.key) !== JSON.stringify(entry.value)).map(entry => entry.key)
     try {
       await fs.rm(join(folders.runs, record), { force: true }, api)
-      for (const entry of cache) if (!kept.has(entry.name)) await fs.rm(join(folders.cache, entry.name), { force: true }, api)
-      for (const entry of capture.cache) if (cache.find(item => item.name === entry.name)?.base64 !== entry.base64) await atomicWriteFile(join(folders.cache, entry.name), fs.base64Bytes(entry.base64), api)
+      for (const entry of cache) if (!kept.has(entry.key)) await api.cache.delete(harnessCacheNamespace(capture.harnessId), entry.key)
+      for (const entry of capture.cache) if (written.includes(entry.key) || !cache.some(item => item.key === entry.key)) await writeHarnessCacheEntry(capture.harnessId, entry, api)
       for (const folder of chain(capture.harnessId).reverse()) if (!capture.folders[folder] && !(await fs.readdir(folder, undefined, api).catch(() => [''])).length) await fs.rm(folder, { recursive: true, force: true }, api)
     } catch (error) { throw unknown(error) }
     return { harnessId: capture.harnessId, runId: input.runId, cache: written.sort() }

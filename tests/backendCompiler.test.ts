@@ -6,6 +6,8 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const compilerLoads = vi.hoisted(() => ({ count: 0 }))
+const backendRegister = vi.hoisted(() => vi.fn())
+vi.mock('../src/backend/index', () => ({ register: backendRegister }))
 vi.mock('typescript', async () => {
   compilerLoads.count++
   return vi.importActual('typescript')
@@ -65,15 +67,23 @@ it('packages optional compiler and PDF libraries outside the startup graph while
   const { backendBuildOptions } = await import(pathToFileURL(path.join(root, 'build.mjs')).href) as { backendBuildOptions(root: string, directory: string): BuildOptions }
   const output = await build({ absWorkingDir: root, bundle: true, format: 'esm', platform: 'browser', target: 'es2022', minify: true, metafile: true, write: false, ...backendBuildOptions(root, outdir) })
   const files = output.metafile!.outputs
-  const entry = Object.keys(files).find(file => files[file].entryPoint === 'src/backend/index.ts')!
+  const entry = Object.keys(files).find(file => files[file].entryPoint === 'src/backend/entry.ts')!
   expect(entry).toBe('runtime/backend.js')
+  const entryGraph = new Set<string>()
+  const visitEntry = (file: string): void => {
+    if (entryGraph.has(file)) return
+    entryGraph.add(file)
+    for (const dependency of files[file].imports) if (dependency.kind !== 'dynamic-import' && !dependency.external) visitEntry(dependency.path)
+  }
+  visitEntry(entry)
+  expect([...entryGraph].flatMap(file => Object.keys(files[file].inputs))).toEqual(['src/backend/entry.ts'])
   const visited = new Set<string>()
   const visit = (file: string): void => {
     if (visited.has(file)) return
     visited.add(file)
     for (const dependency of files[file].imports) if (dependency.kind !== 'dynamic-import' && !dependency.external) visit(dependency.path)
   }
-  visit(entry)
+  visit(Object.keys(files).find(file => 'src/backend/index.ts' in files[file].inputs)!)
   const startupInputs = [...visited].flatMap(file => Object.keys(files[file].inputs))
   expect(startupInputs.some(input => /node_modules\/(typescript|pdfjs-dist)\//.test(input))).toBe(false)
   for (const name of ['typescript', 'pdfjs-dist']) expect(Object.values(files).some(file => Object.keys(file.inputs).some(input => input.includes(`node_modules/${name}/`)))).toBe(true)
@@ -81,4 +91,16 @@ it('packages optional compiler and PDF libraries outside the startup graph while
     if (Object.keys(metadata.inputs).some(input => ['src/backend/attachments/pdfPipeline.ts', 'src/backend/harness/packages.ts'].includes(input))) expect(path.dirname(file)).toBe('runtime')
     for (const dependency of metadata.imports) if (!dependency.external) expect(files[dependency.path]).toBeDefined()
   }
+})
+
+it('ends the guest turn before each backend loading stage', async () => {
+  const dispose = async () => {}
+  const timer = vi.spyOn(globalThis, 'setTimeout')
+  const turns: number[] = []
+  backendRegister.mockImplementation(() => { turns.push(timer.mock.calls.filter(call => call[1] === 0).length); return dispose })
+  try {
+    const { register } = await import('../src/backend/entry')
+    expect(await register({} as never)).toBe(dispose)
+    expect(turns).toEqual([4])
+  } finally { timer.mockRestore() }
 })

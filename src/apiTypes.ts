@@ -1,5 +1,5 @@
 import type { DriverResult, FileBaseline, GuardedWriteResult } from '@valley/plugin-sdk/types'
-import type { HarnessId, AiCacheStats, AiChatRequest, AiChatSummary, AiChatThread, AiMemoryEntry, AiPersonality, AiModelInfo, AiOllamaStatus, AiProviderBalanceResult, AiConnectionStatus, AiProviderId, AiProvidersStatus, AiStreamEvent, AiUsageStats, AssistantConfig, ChannelMessage, ChannelsInfo, CustomCommand, RoutingConfig } from './types'
+import type { HarnessId, AiChatRequest, AiChatSummary, AiChatThread, AiMemoryEntry, AiPersonality, AiModelInfo, AiOllamaStatus, AiProviderBalanceResult, AiConnectionStatus, AiProviderId, AiProvidersStatus, AiStreamEvent, AiUsageStats, AssistantConfig, ChannelMessage, ChannelsInfo, CustomCommand, RoutingConfig } from './types'
 import type { GuardPolicy, GuardOverrides, GuardAuditEntry, PendingApprovalRecord } from '@valley/plugin-sdk/guard/types'
 import type { HarnessPackageStatus, HarnessPackageSnapshot, HarnessRun, HarnessCreatePackage, HarnessManifest, HarnessConfig, HarnessSettingValue, HarnessTarget, HarnessRunOptions, HarnessEvent } from './harnessTypes'
 export interface AiProvidersResult extends DriverResult {
@@ -35,11 +35,6 @@ export interface AiPendingResult extends DriverResult {
 /** `DriverResult` whose `data` carries a chat's persisted guard overrides (or null). */
 export interface AiGuardOverridesResult extends DriverResult {
   data?: { overrides: GuardOverrides | null }
-}
-
-/** `DriverResult` whose `data` carries the safe API-metadata cache stats (Phase 5). */
-export interface AiCacheStatsResult extends DriverResult {
-  data?: AiCacheStats
 }
 
 /** `DriverResult` whose `data` carries the started run's id. */
@@ -140,8 +135,6 @@ export interface AiDriver {
   writeRule(name: string, content: string, expectedRevision?: number): Promise<DriverResult>
   /** Read the Guard policy (`guards.json`) — the single permission rule set. */
   getGuard(): Promise<AiGuardResult>
-  /** Persist the Guard policy (normalized + hard-blocks re-seeded in main). */
-  saveGuard(policy: GuardPolicy): Promise<AiGuardResult>
   /** Append one decision to the guard audit trail (best-effort; never throws). */
   appendGuardAudit(entry: GuardAuditEntry): Promise<DriverResult>
   /** Persist a pending channel approval to runtime (survives restart, C8). */

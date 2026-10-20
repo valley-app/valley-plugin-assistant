@@ -50,7 +50,7 @@ export class ChannelActions {
   }
 }
 
-interface ChoiceHandle { id: string; conversationId: string; value: string; questionId?: string; actor: ChannelActor; expiresAt: number; state: 'WAITING' | 'OPEN' | 'CONSUMED' }
+interface ChoiceHandle { id: string; conversationId: string; value: string; questionId?: string; reply?: string; actor: ChannelActor; expiresAt: number; state: 'WAITING' | 'OPEN' | 'CONSUMED' }
 interface ChoiceBundle { id: string; conversationId: string; kind: 'choices'; destination: MessageDestination; content: Extract<MessageContent, { type: 'buttons' | 'list' }>; state: 'WAITING' | 'BOUND' }
 
 export class ChannelChoices {
@@ -65,6 +65,12 @@ export class ChannelChoices {
     await this.persist(handle)
     return handle.id
   }
+  /** A button the model sent: tapping it sends its label back as the user's own message, like typing it. */
+  async issueReply(id: string, conversationId: string, value: string, reply: string, actor: ChannelActor): Promise<string> {
+    if (await this.repository.get<ChoiceHandle>('channel_actions', id)) return id
+    await this.persist({ id, conversationId, value, reply, actor, state: 'WAITING', expiresAt: Date.now() + 24 * 60 * 60 * 1000 })
+    return id
+  }
   async bind(id: string, messageId: string): Promise<void> {
     await runExclusive(`action:${id}`, async () => {
       const handle = await this.repository.get<ChoiceHandle>('channel_actions', id)
@@ -74,7 +80,7 @@ export class ChannelChoices {
       handle.actor.messageId = messageId; handle.state = 'OPEN'; await this.persist(handle)
     })
   }
-  async consume(id: string, actor: ChannelActor, run: (value: string, questionId?: string) => Promise<void>): Promise<boolean> {
+  async consume(id: string, actor: ChannelActor, run: (value: string, questionId?: string, reply?: boolean) => Promise<void>): Promise<boolean> {
     if (!id.startsWith('choice:')) return false
     return runExclusive(`action:${id}`, async () => {
       const handle = await this.repository.get<ChoiceHandle>('channel_actions', id)
@@ -84,7 +90,8 @@ export class ChannelChoices {
         const question = await this.repository.get<Question>('questions', handle.questionId)
         if (!question || question.state !== 'OPEN' || question.expiresAt <= Date.now() || question.conversationId !== handle.conversationId || question.connectionId !== actor.channelId || question.recipientId !== actor.senderId || !question.choices.some(choice => choice.value === handle.value)) return false
         await run(handle.value, handle.questionId)
-      } else await run(handle.value)
+      } else if (handle.reply !== undefined) await run(handle.reply, undefined, true)
+      else await run(handle.value)
       handle.state = 'CONSUMED'; await this.persist(handle)
       return true
     })

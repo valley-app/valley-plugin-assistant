@@ -40,36 +40,26 @@ describe('package-owned harness commands', () => {
       await created.revert.run()
       expect(JSON.stringify([...mock.chatThreads])).toBe(baseline)
       const stop = vi.spyOn(store, 'stop')
+      let snapshot: unknown = { state: 'INTERRUPTED', paused: true }
+      const operation = vi.spyOn(mock.api.backend, 'callOperation').mockImplementation(async (method: string) => method === 'command.session.snapshot' ? snapshot : null)
       expect(mock.commands.find(item => item.id === 'stop-chat')?.sideEffect).toBe('execute')
       expect(await invoke('stop-chat', { id: thread.id })).toEqual({ id: thread.id, stopped: true })
       expect(stop).toHaveBeenCalledWith(thread.id)
+      expect(operation).toHaveBeenCalledWith('command.session.stop', { conversationId: thread.id }, { cancellation: undefined })
+      // 4.10: a stop that did not land is reported as not stopped instead of assumed.
+      snapshot = { state: 'INFERRING', paused: false }
+      expect(await invoke('stop-chat', { id: thread.id })).toEqual({ id: thread.id, stopped: false })
+      operation.mockRestore()
     } finally { off(); await disposeStore(mock.api) }
   })
-  it('waits for the conversation terminal result before reporting send-message success', async () => {
+  it('leaves send-message to the backend owner so a window reload neither cancels nor repeats the turn', async () => {
     const mock = createMockValleyApi({ manifest: { id: 'assistant' } })
-    const thread = { id: 'fern', title: 'Fern', createdAt: 1, updatedAt: 1, messages: [] }
-    mock.chatThreads.set(thread.id, thread)
-    const store = getStore(mock.api)
-    await store.whenReady
-    let finish!: (value: unknown) => void
-    const operation = vi.spyOn(mock.api.backend, 'callOperation').mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    await getStore(mock.api).whenReady
     const off = registerAssistantCommands(mock.api)
-    try {
-      const command = mock.commands.find(item => item.id === 'send-message')!
-      let returned = false
-      const sent = command.run({ id: thread.id, text: 'Read the note fern.md' }, {} as never)
-      void Promise.resolve(sent).then(() => { returned = true })
-      await vi.waitFor(() => expect(operation).toHaveBeenCalledOnce())
-      expect(returned).toBe(false)
-      expect(operation).toHaveBeenCalledWith('command.session.submit', { id: expect.any(String), conversationId: thread.id, text: 'Read the note fern.md' }, { cancellation: undefined })
-      const completed = { ...thread, messages: [{ role: 'assistant', content: 'Fern contents' }] }
-      finish({ state: 'IDLE', error: null, thread: completed })
-      const result = await sent
-      expect(result).toEqual({ value: completed, revert: null })
-      expect(new Ajv({ strict: false }).validate(assistantResults['send-message'], (result as { value: unknown }).value)).toBe(true)
-      operation.mockRejectedValueOnce(new Error('No progress while waiting for provider output'))
-      await expect(command.run({ id: thread.id, text: 'Read the note fern.md' }, {} as never)).rejects.toThrow('No progress')
-    } finally { off(); await disposeStore(mock.api) }
+    try { expect(mock.commands.map(item => item.id)).not.toContain('send-message') } finally { off(); await disposeStore(mock.api) }
+    const services = config.runtime.services as unknown as Array<{ id: string; method: string; operation?: boolean; metadata?: { command?: { id: string } } }>
+    expect(services.find(service => service.metadata?.command?.id === 'send-message')).toMatchObject({ method: 'command.sendMessage', operation: true, metadata: { command: { effect: 'write', result: 'command', reconcileMethod: 'command.sendMessage.reconcile' } } })
+    expect(services.find(service => service.method === 'command.sendMessage.reconcile')).toMatchObject({ id: 'command.sendMessage.reconcile', operation: true })
   })
   it('registers declared legacy aliases and releases every command', () => {
     const mock = createMockValleyApi({ manifest: { id: 'renamed-assistant' } })

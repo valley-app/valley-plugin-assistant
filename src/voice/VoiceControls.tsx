@@ -177,21 +177,35 @@ export function VoiceControls(props: VoiceControlsProps) {
   const orb: OrbState = error ? 'error' : state === 'speaking' ? 'speaking' : props.executionState === 'review' ? 'review' : props.executionState === 'working' ? 'working' : executing || state === 'processing' ? 'thinking' : state === 'stopped' ? 'idle' : state
   const status = error ? words('error') : words(orb)
   if (!open) return props.hiddenLauncher ? null : <div className="assistant-voice-entry"><style>{css}</style><Button size="small" variant="ghost" onClick={() => void start()}>{words('start')}</Button></div>
+  const actions = <div className="assistant-voice-actions">
+    {!sessionId && <Button size="small" disabled={state === 'connecting'} onClick={() => void start()}>{words('start')}</Button>}
+    {sessionId && settings?.liveMode === 'push-to-talk' && <Button size="small" className="assistant-voice-hold" aria-pressed={holding} onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); begin() }} onPointerUp={finish} onPointerCancel={finish} onBlur={finish} onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); begin() } }} onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); finish() } }}>{words('hold')}</Button>}
+    {sessionId && settings?.liveMode === 'hands-free' && <Button size="small" onClick={() => control(state === 'muted' ? 'unmute' : 'mute')}>{words(state === 'muted' ? 'unmute' : 'mute')}</Button>}
+    {sessionId && <Button size="small" variant="ghost" onClick={() => { cancel(); callbacks.current.onInterrupted?.() }}>{words('interrupt')}</Button>}
+    {sessionId ? <Button size="small" variant="ghost" onClick={() => void stop()}>{words('stop')}</Button> : <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={close}>{words('close')}</Button>}
+    {!sessionId && <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={() => void choose()}>{words('choose')}</Button>}
+    <Button size="small" variant="ghost" onClick={() => api.workspace.openSettings('plugin:assistant#voice')}>{words('settings')}</Button>
+  </div>
+  const select = choosing && !sessionId && <div className="assistant-voice-select"><api.ui.settings.SelectField value={settings?.voiceId ?? ''} ariaLabel={words('choose')} options={[{ value: '', label: words('choose') }, ...voices.map(voice => ({ value: voice.id, label: voice.name }))]} onChange={value => void selectVoice(value)} />{!voices.length && <span>{words('noVoices')}</span>}</div>
+  if (props.hiddenLauncher) {
+    // Started from the sidebar: the voice conversation takes over the whole chat page, with the orb in the centre.
+    return <section className="assistant-voice-page" role="dialog" aria-modal="true" aria-label={words('heading')} onKeyDown={event => { if (event.key === 'Escape') close() }}>
+      <style>{css}</style>
+      <VoiceOrb state={orb} input={levels.input} output={levels.output} size={240} />
+      <span className="assistant-voice-status" role="status" aria-live="polite">{status}</span>
+      {transcript && <p className="assistant-voice-transcript">{transcript}</p>}
+      {actions}
+      {select}
+      {error && <ErrorNotice error={error} />}
+    </section>
+  }
   const panel = <section className="assistant-voice-panel" aria-label={words('heading')}>
     <style>{css}</style><VoiceOrb state={orb} input={levels.input} output={levels.output} />
     <div className="assistant-voice-content"><span className="assistant-voice-status" role="status" aria-live="polite">{status}</span>{transcript && <p className="assistant-voice-transcript">{transcript}</p>}
-      <div className="assistant-voice-actions">
-        {!sessionId && <Button size="small" disabled={state === 'connecting'} onClick={() => void start()}>{words('start')}</Button>}
-        {sessionId && settings?.liveMode === 'push-to-talk' && <Button size="small" className="assistant-voice-hold" aria-pressed={holding} onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); begin() }} onPointerUp={finish} onPointerCancel={finish} onBlur={finish} onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); begin() } }} onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); finish() } }}>{words('hold')}</Button>}
-        {sessionId && settings?.liveMode === 'hands-free' && <Button size="small" onClick={() => control(state === 'muted' ? 'unmute' : 'mute')}>{words(state === 'muted' ? 'unmute' : 'mute')}</Button>}
-        {sessionId && <Button size="small" variant="ghost" onClick={() => { cancel(); callbacks.current.onInterrupted?.() }}>{words('interrupt')}</Button>}
-        {sessionId ? <Button size="small" variant="ghost" onClick={() => void stop()}>{words('stop')}</Button> : <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={close}>{words('close')}</Button>}
-        {!sessionId && <Button size="small" variant="ghost" disabled={state === 'connecting'} onClick={() => void choose()}>{words('choose')}</Button>}
-        <Button size="small" variant="ghost" onClick={() => api.workspace.openSettings('plugin:assistant#voice')}>{words('settings')}</Button>
-      </div>
+      {actions}
     </div>
-    {choosing && !sessionId && <div className="assistant-voice-select"><api.ui.settings.SelectField value={settings?.voiceId ?? ''} ariaLabel={words('choose')} options={[{ value: '', label: words('choose') }, ...voices.map(voice => ({ value: voice.id, label: voice.name }))]} onChange={value => void selectVoice(value)} />{!voices.length && <span>{words('noVoices')}</span>}</div>}
+    {select}
     {error && <ErrorNotice error={error} />}
   </section>
-  return props.hiddenLauncher ? <api.ui.Modal title={words('heading')} size="small" onClose={close}>{panel}</api.ui.Modal> : panel
+  return panel
 }

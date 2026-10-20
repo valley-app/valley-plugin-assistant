@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { PluginBackendOperationContext } from '@valley/plugin-sdk'
-import type { AiChatRequest, AiMessage, AiToolCall } from '../../types'
+import type { AiChatRequest, AiMessage, AiStreamEvent, AiToolCall } from '../../types'
 import { runtimeScope, trackProcessScope } from '../processScopes'
 import { appendActivity, activityRequest, outputChunks } from '../activity'
 import { assertChatWritable } from '../attachments'
@@ -21,7 +21,8 @@ export function respondToRuntime(value: unknown): void {
 export interface RuntimeHooks {
   event(payload: Record<string, unknown>): void
   tool(call: AiToolCall): Promise<string>
-  progress?(): void
+  /** Provider output that counts as progress: text deltas and new tool calls. */
+  progress?(event: AiStreamEvent): void
   prepare?(request: AiChatRequest): Promise<AiChatRequest>
 }
 export async function runNativeRuntime(value: unknown, context: PluginBackendOperationContext, hooks?: RuntimeHooks): Promise<void> {
@@ -171,7 +172,8 @@ export async function runNativeRuntime(value: unknown, context: PluginBackendOpe
       if (buffer.length > 4 * 1024 * 1024) stop(new Error('Runtime protocol frame exceeds 4 MB'))
     }
   })
-  dispose = () => { off(); release(); clearTimeout(timer); context.cancellation.removeEventListener('abort', abort) }
+  // The host keeps every unfinished streaming decoder and stops the backend at 128, so each run finishes its decoder (stderr is finished below).
+  dispose = () => { off(); release(); clearTimeout(timer); context.cancellation.removeEventListener('abort', abort); decoder.decode() }
   try {
     if (context.cancellation.aborted) throw new Error('Runtime cancelled')
     await assertChatWritable(input.chatId)

@@ -36,10 +36,10 @@ export function orbFrame(size: number, time: number, input: OrbInput, energy = a
   return dots.sort((a, b) => a.z - b.z)
 }
 
-export function createVoiceOrb(canvas: HTMLCanvasElement, initial: OrbInput) {
+export function createVoiceOrb(canvas: HTMLCanvasElement, initial: OrbInput, size = 72) {
   const document = canvas.ownerDocument, window = document.defaultView, context = canvas.getContext('2d')
   if (!window || !context) return { set: (_input: OrbInput) => {}, destroy: () => {} }
-  const size = 72, motion = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+  const motion = window.matchMedia?.('(prefers-reduced-motion: reduce)')
   let input = initial, frame = 0, lastPaint = -Infinity, stopped = false, visible = true
   let energy = activity(initial.state), level = 0, elapsed = 0, lastTime: number | undefined
   const paint = (time: number) => {

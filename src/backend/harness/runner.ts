@@ -135,7 +135,7 @@ async function completion(
     settings
   })
   if (run.options.useCache) {
-    const cached = await readHarnessCache(root, harness.manifest.id, key, harness.config.cache.maxAgeDays)
+    const cached = await readHarnessCache(harness.manifest.id, key, harness.config.cache.maxAgeDays)
     if (cached) {
       meter.cacheHits += 1
       meter.turnCount += 1
@@ -182,7 +182,7 @@ async function completion(
       meter.costUsd += costFor(target.provider, target.model, value.inputTokens, value.outputTokens)
       meter.retries += attempt - 1
       meter.turnCount += 1
-      if (run.options.useCache) await writeHarnessCache(root, harness.manifest.id, key, result, harness.config.cache.maxSizeMb)
+      if (run.options.useCache) await writeHarnessCache(harness.manifest.id, key, result, harness.config.cache.maxAgeDays, harness.config.cache.maxSizeMb)
       return result
     } catch (error) {
       lastError = error
@@ -271,7 +271,7 @@ function runCaseWorker(
             if (!request || message.payload?.caseId !== caseDefinition.id || message.payload.turn !== ++requestedTurns || requestedTurns > harness.config.execution.maxTurns) throw new Error(t('assistant.backend.harnessRequest'))
             value = await completion(root, run, target, caseDefinition.id, requestedTurns, request, settings, meter, caseCancellation.signal)
           } else if (message.method === 'clear-cache') {
-            value = await clearHarnessCache(root, run.harnessId)
+            value = await clearHarnessCache(run.harnessId)
           } else {
             throw new Error(t('assistant.backend.harnessOperation'))
           }
