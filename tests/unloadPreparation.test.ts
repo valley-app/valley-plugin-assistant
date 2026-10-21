@@ -347,3 +347,71 @@ describe('renderer and backend unload ownership', () => {
     expect(backend.pendingApprovals.size).toBe(0)
   })
 })
+
+describe('store load while the backend is busy', () => {
+  const BUSY = 'Too many Assistant requests are pending'
+  const TIMEOUT = 'Plugin UI request timed out (method=api.call timeoutMs=30000 elapsedMs=30012 requestId=fern)'
+  function seeded(count = 150) {
+    const backend = fixture()
+    for (let index = 0; index < count; index++) backend.chatThreads.set(`fern-${index}`, { id: `fern-${index}`, title: `Fern survey ${index}`, createdAt: 1, updatedAt: 1 + index, messages: [{ role: 'user', content: `Fern count ${index}` }] })
+    return backend
+  }
+  function mount(backend: ReturnType<typeof fixture>) {
+    const dispose = register(backend.api); disposers.push(dispose)
+    return getStore(backend.api)
+  }
+  const settle = (condition: () => boolean, timeout = 5000) => vi.waitFor(() => expect(condition()).toBe(true), { timeout, interval: 20 })
+
+  it.each([
+    ['the chat listing', 'listChats', BUSY],
+    ['the chat listing', 'listChats', TIMEOUT],
+    ['the newest conversation', 'readChat', BUSY],
+    ['the pending approvals', 'listPending', BUSY]
+  ] as const)('retries the load when %s (%s) is refused after the configuration loaded and shows the chat list without a reload', async (_part, method, refusal) => {
+    const backend = seeded()
+    const refused = vi.spyOn(backend.api.assistant, method).mockResolvedValueOnce({ ok: false, error: refusal })
+    const store = mount(backend)
+    await expect(store.whenReady).rejects.toThrow(refusal)
+    expect(store.getSnapshot().ready).toBe(false)
+    await settle(() => store.getSnapshot().ready)
+    expect(store.getSnapshot()).toMatchObject({ ready: true, error: null, active: { id: 'fern-149' } })
+    expect(store.getSnapshot().threads).toHaveLength(150)
+    expect(refused.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(getStore(backend.api)).toBe(store)
+    await expect(store.prepareUnload()).resolves.toBeUndefined()
+  })
+
+  it('lets the unload proceed after a busy load when nothing is unsaved, and loads once the unload is cancelled', async () => {
+    const backend = seeded(3)
+    const listChats = vi.spyOn(backend.api.assistant, 'listChats').mockResolvedValue({ ok: false, error: BUSY })
+    const store = mount(backend)
+    await expect(store.whenReady).rejects.toThrow(BUSY)
+    await expect(store.prepareUnload()).resolves.toBeUndefined()
+    const calls = listChats.mock.calls.length
+    await new Promise(resolve => setTimeout(resolve, 400))
+    expect(listChats).toHaveBeenCalledTimes(calls)
+    listChats.mockRestore()
+    store.resumeAfterUnloadCancellation()
+    await settle(() => store.getSnapshot().ready)
+    expect(store.getSnapshot().threads.map(thread => thread.id)).toEqual(['fern-2', 'fern-1', 'fern-0'])
+  })
+
+  it('keeps the chat list and reads it again once a refresh during a burst of changes is refused', async () => {
+    const backend = seeded()
+    const { store } = await start(backend)
+    const original = backend.api.assistant.listChats
+    let refusals = 2, inFlight = 0, peak = 0
+    const listChats = vi.spyOn(backend.api.assistant, 'listChats').mockImplementation(async cursor => {
+      peak = Math.max(peak, ++inFlight)
+      try { await new Promise(resolve => setTimeout(resolve, 5)); return refusals-- > 0 ? { ok: false, error: BUSY } : await original(cursor) }
+      finally { inFlight-- }
+    })
+    backend.chatThreads.delete('fern-0')
+    await Promise.all(Array.from({ length: 50 }, () => store.reloadThreads()))
+    expect(store.getSnapshot().threads).toHaveLength(150)
+    await settle(() => store.getSnapshot().threads.length === 149)
+    expect(store.getSnapshot().threads.some(thread => thread.id === 'fern-0')).toBe(false)
+    expect(peak).toBe(1)
+    expect(listChats).toHaveBeenCalledTimes(3)
+  })
+})

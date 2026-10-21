@@ -49,6 +49,16 @@ import { createApprovalOwner, type ApprovalOrigin as TurnOrigin } from './approv
  * via `useSyncExternalStore`.
  */
 const STORE_KEY = 'assistant.store'
+/** Delays between store load attempts; after the configuration loaded, the last one repeats while the load is refused as busy. */
+const LOAD_RETRY_MS = [250, 1000, 3000]
+
+/** A refusal that only means "busy right now": the backend's or the host's request bound, or a request that timed out. */
+function retryableLoadFailure(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'ASSISTANT_BUSY'
+    || /Too many Assistant requests are pending|Too many plugin UI requests|too many pending requests|request timed out/i.test(error instanceof Error ? error.message : String(error))
+}
+/** A chat listing page the backend did not answer; the list on screen stays as it was. */
+class ListingRefused extends Error {}
 
 
 /** A permissive-but-safe stand-in used only before the real policy has loaded. */
@@ -187,6 +197,9 @@ class AssistantStore {
   private initializationError: string | undefined
   private initializationRetries = 0
   private initializationRetry: ReturnType<typeof setTimeout> | undefined
+  private initializationRetryable = false
+  private threadsRetries = 0
+  private threadsRetry: ReturnType<typeof setTimeout> | undefined
   private approvals: ReturnType<typeof createApprovalOwner>
   private disposal: Promise<void> | undefined
   /** Per-chat guard narrowing ("Always allow/ask/block here") — persisted to guard-overrides.json. */
@@ -269,6 +282,8 @@ class AssistantStore {
   private acceptSession(session: SessionSnapshot): void {
     if (this.disposed || (this.sessions.get(session.conversationId)?.revision ?? -1) > session.revision) return
     const previous = this.sessions.get(session.conversationId)
+    // A streaming update arrives without the messages, which it did not change.
+    if (!session.thread && previous?.thread) session = { ...session, thread: previous.thread }
     this.sessions.set(session.conversationId, session)
     const settled = (value: SessionSnapshot) => ['IDLE', 'FAILED', 'INTERRUPTED', 'AWAITING_QUESTION', 'AWAITING_APPROVAL'].includes(value.state)
     if (previous && !settled(previous) && settled(session) && this.state.active?.id !== session.conversationId) {
@@ -295,6 +310,7 @@ class AssistantStore {
       this.notify()
     }).catch(error => {
       this.initializationError = error instanceof Error ? error.message : String(error)
+      this.initializationRetryable = retryableLoadFailure(error)
       this.state.error = this.initializationError
       this.notify()
       throw error
@@ -307,8 +323,10 @@ class AssistantStore {
   }
 
   private scheduleInitializationRetry(): void {
-    if (this.configurationLoaded || !this.initializationError || this.initializationPending || this.preparing || this.disposed || this.initializationRetry !== undefined) return
-    const delay = [250, 1000, 3000][this.initializationRetries]
+    if (!this.initializationError || this.initializationPending || this.preparing || this.disposed || this.initializationRetry !== undefined) return
+    // Once the configuration loaded, only a load refused as busy or timed out is retried, until it succeeds.
+    if (this.configurationLoaded && !this.initializationRetryable) return
+    const delay = this.configurationLoaded ? LOAD_RETRY_MS[Math.min(this.initializationRetries, LOAD_RETRY_MS.length - 1)] : LOAD_RETRY_MS[this.initializationRetries]
     if (delay === undefined) return
     this.initializationRetry = setTimeout(() => {
       this.initializationRetry = undefined
@@ -456,7 +474,8 @@ class AssistantStore {
     this.notify()
     const retry = [...this.dirtyThreads.values()].filter((thread) => this.failedThreads.has(thread.id))
     try {
-      try { await this.whenReady } catch (error) { if (this.configurationLoaded) throw error }
+      // A load that was only refused as busy or timed out holds nothing to save; it resumes after a cancelled unload.
+      try { await this.whenReady } catch (error) { if (this.configurationLoaded && !retryableLoadFailure(error)) throw error }
       for (const [id] of [...this.runs]) this.stop(id)
       while (this.pendingWork.size || this.pendingSaves.size) await Promise.allSettled([...this.pendingWork, ...this.pendingSaves])
       for (const thread of retry) {
@@ -487,9 +506,10 @@ class AssistantStore {
     if (this.disposed || this.preparing) return
     this.configurationLoaded = true
     await this.reloadConfig()
-    await this.reloadThreads()
+    // A refused listing fails the load so that it is retried; it never reads as "No conversations yet."
+    await this.loadThreads().catch(error => { if (!(error instanceof ListingRefused) || retryableLoadFailure(error)) throw error })
     if (!this.hasUserSelection) {
-      if (this.state.threads[0]) await this.openChat(this.state.threads[0].id, false)
+      if (this.state.threads[0]) await this.openChat(this.state.threads[0].id, false, true)
       else this.newChat(undefined, false)
       if (this.state.active) this.pushChatHistory(this.state.active.id)
     }
@@ -515,9 +535,21 @@ class AssistantStore {
     return this.configRefresh
   }
 
-  /** One listChats at a time: requests made while it runs share a single later reload, so event bursts cannot pile up
-   *  page calls past the UI channel limit, and every caller still sees a list read after its request. */
+  /** Refreshes the chat list. A listing refused as busy or timed out keeps the current list and is read again later
+   *  (one pending retry, backing off), so a burst of changes never blanks the list. */
   reloadThreads(): Promise<void> {
+    return this.loadThreads().catch(error => {
+      if (!(error instanceof ListingRefused)) throw error
+      if (!retryableLoadFailure(error) || this.disposed || this.threadsRetry !== undefined) return
+      const delay = LOAD_RETRY_MS[Math.min(this.threadsRetries++, LOAD_RETRY_MS.length - 1)]
+      this.threadsRetry = setTimeout(() => { this.threadsRetry = undefined; if (!this.disposed) void this.reloadThreads() }, delay)
+    })
+  }
+
+  /** One listChats at a time: requests made while it runs share a single later reload, so event bursts cannot pile up
+   *  page calls past the UI channel limit, and every caller still sees a list read after its request. A refused page
+   *  rejects and leaves the current list in place. */
+  private loadThreads(): Promise<void> {
     if (this.threadsReload) { this.threadsStale = true; return this.threadsReload }
     const reload = async (): Promise<void> => {
       try {
@@ -527,10 +559,12 @@ class AssistantStore {
           let cursor: string | undefined
           do {
             const res = await this.api.assistant.listChats(cursor)
+            if (!res.ok) throw new ListingRefused(res.error || 'Assistant chats are unavailable')
             for (const chat of res.data?.chats ?? []) threads.set(chat.id, chat)
             cursor = res.data?.cursor
           } while (cursor && !this.disposed)
           this.state.threads = [...threads.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+          this.threadsRetries = 0
           this.notify()
         } while (this.threadsStale && !this.disposed)
       } finally { this.threadsReload = undefined; this.threadsStale = false }
@@ -577,7 +611,7 @@ class AssistantStore {
     await this.reloadThreads()
   }
 
-  async openChat(id: string, recordHistory = true): Promise<boolean> {
+  async openChat(id: string, recordHistory = true, failRefusal = false): Promise<boolean> {
     if (id !== this.state.active?.id) this.voiceConversationId = undefined
     this.unreadChats.delete(id); this.erroredChats.delete(id)
     if (recordHistory) this.hasUserSelection = true
@@ -601,6 +635,7 @@ class AssistantStore {
       this.notify()
       return true
     }
+    if (failRefusal && !res.ok && retryableLoadFailure(res.error)) throw new Error(res.error)
     return false
   }
 
@@ -1563,6 +1598,8 @@ class AssistantStore {
     for (const admissions of this.admissions.values()) for (const admission of admissions) admission.abort()
     clearTimeout(this.initializationRetry)
     this.initializationRetry = undefined
+    clearTimeout(this.threadsRetry)
+    this.threadsRetry = undefined
     this.approvals.pause()
     this.offSessions?.(); this.offSessions = null
     for (const off of this.offBackendErrors) off()

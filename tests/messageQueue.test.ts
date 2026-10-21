@@ -360,3 +360,29 @@ describe('per-chat binding with simultaneous chats (readiness 4.6)', () => {
     expect(store.getSnapshot().error).toBeNull()
   })
 })
+
+describe('streaming updates without messages', () => {
+  it('keeps the open conversation and its list preview while streaming updates leave out the unchanged messages', async () => {
+    const backend = fixture(), store = getStore(backend.api), gate = backend.gate()
+    await store.whenReady
+    const updates: Array<{ type: string; messages?: number }> = []
+    backend.model.mockImplementation(async (_session, _turn, controls) => {
+      updates.length = 0
+      await controls.stream('Moss covers')
+      await controls.stream('Moss covers four plots')
+      await gate.promise
+      await controls.message({ role: 'assistant', content: 'Moss covers four plots.' })
+    })
+    const off = backend.api.backend.on('session.changed', value => { const { session, event } = value as { session: { thread?: { messages: unknown[] } }; event: { type: string } }; updates.push({ type: event.type, messages: session.thread?.messages.length }) })
+    await store.send('Count the moss plots')
+    const id = store.getSnapshot().active!.id
+    await until(() => store.getSnapshot().streamingText === 'Moss covers four plots')
+    expect(updates.filter(update => update.type === 'stream')).toEqual([{ type: 'stream' }, { type: 'stream' }])
+    expect(store.getSnapshot().active!.messages.map(message => message.content)).toEqual(['Count the moss plots'])
+    expect(store.getSnapshot().threads.find(thread => thread.id === id)?.preview).toBe('Count the moss plots')
+    gate.resolve()
+    await until(() => backend.coordinator.snapshot(id)?.state === 'IDLE' && store.getSnapshot().active!.messages.length === 2)
+    expect(store.getSnapshot().active!.messages.map(message => message.content)).toEqual(['Count the moss plots', 'Moss covers four plots.'])
+    off()
+  })
+})

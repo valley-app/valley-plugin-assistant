@@ -61,7 +61,7 @@ export class SessionCoordinator {
   private committed = new Set<string>()
   // Settled conversations restored without their messages; the stored row keeps them until the conversation is used.
   private unloaded = new Set<string>()
-  // Conversations holding their messages, least recently used first; beyond the newest few, a settled one goes back to its stored row.
+  // Conversations holding their messages, least recently used first; beyond the newest few (Telegram and WhatsApp ones included), a settled one goes back to its stored row.
   private loaded = new Set<string>()
   private closing = false
   private rejectedAdmissions = new Set<string>()
@@ -96,7 +96,7 @@ export class SessionCoordinator {
     if (recovering || held.length) await this.commit(session, 'recovered', {}, held.map(turn => ({ dataset: 'turn_queue', operation: 'upsert', values: record(turn.id, session.conversationId, 'PENDING', turn) })))
     // The transcript is projected once more (it may have missed its last write), then a settled conversation keeps only its state.
     await this.ports.project(session, true)
-    if (session.thread && !recovering && !session.queue.length && !['telegram', 'whatsapp'].includes(session.thread.source ?? '')) { delete session.thread; this.unloaded.add(session.conversationId) }
+    if (session.thread && !recovering && !session.queue.length) { delete session.thread; this.unloaded.add(session.conversationId) }
     else if (session.thread) this.loaded.add(session.conversationId)
   }
 
@@ -109,7 +109,7 @@ export class SessionCoordinator {
   private release(id: string): void {
     const session = this.sessions.get(id)
     if (!session?.thread) { this.loaded.delete(id); return }
-    if (this.active.has(id) || this.writes.has(id) || !this.committed.has(id) || session.queue.length || !settledStates.includes(session.state) || ['telegram', 'whatsapp'].includes(session.thread.source ?? '')) return
+    if (this.active.has(id) || this.writes.has(id) || !this.committed.has(id) || session.queue.length || !settledStates.includes(session.state)) return
     delete session.thread; this.unloaded.add(id); this.loaded.delete(id)
   }
 
@@ -208,7 +208,8 @@ export class SessionCoordinator {
       await this.hydrate(session, api)
       const event = await this.scoped(api).commit(session, type, payload, effects)
       this.committed.add(session.conversationId)
-      if (publish) { this.ports.publish(transportValue(session), transportValue(event), api); this.notify() }
+      // A streaming update changes only the streaming text, so its published copy leaves out the unchanged messages; views keep the ones they have.
+      if (publish) { this.ports.publish(transportValue(type === 'stream' ? { ...session, thread: undefined } : session), transportValue(event), api); this.notify() }
       return event
     } catch (error) {
       // A conversation that was committed before goes back to its stored row.

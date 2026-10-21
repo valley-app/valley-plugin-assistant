@@ -307,7 +307,7 @@ export class AssistantRuntime {
     controls.signal.addEventListener('abort', abort, { once: true })
     if (controls.signal.aborted) abort()
     const operation: PluginBackendOperationContext = { id: runId, cancellation: valleyCancellationOf(controller), api: api }
-    let events = Promise.resolve(), streaming = '', lastStream = 0, opened = false
+    let events = Promise.resolve(), streaming = '', lastStream = 0, opened = false, queuedStream: { text: string } | undefined
     let actionTimeoutMs: number | undefined
     const resumedPermits = new Set<string>()
     // Rediscovery (the same command_list/command_describe input again) and repeating a call that failed with the same
@@ -434,11 +434,19 @@ export class AssistantRuntime {
             // Every surface opens with a line saying what will happen; when the model goes straight to a tool, the turn opens with the fallback.
             if (!opened && message.role === 'assistant' && message.toolCalls?.length && !message.content?.trim()) message.content = openingFallback
             if (message.role === 'assistant') opened = true
-            streaming = ''; events = events.then(() => controls.message(message))
+            streaming = ''; queuedStream = undefined; events = events.then(() => controls.message(message))
             // A failed opening line never stops the turn; the final answer is still delivered.
             if (presence && message.role === 'assistant' && message.toolCalls?.length) { const open = presence; events = events.then(() => open.open(message.content).catch(() => undefined)) }
           }
-          if (event.type === 'text') { streaming = String(event.text); if (Date.now() - lastStream > 100) { const text = streaming; lastStream = Date.now(); events = events.then(() => controls.stream(text)) } }
+          if (event.type === 'text') {
+            streaming = String(event.text)
+            if (Date.now() - lastStream > 100) {
+              lastStream = Date.now()
+              // Each streaming update saves the whole conversation; one still waiting behind a slow save takes the newer text instead of queueing another save.
+              if (queuedStream) queuedStream.text = streaming
+              else { const update = queuedStream = { text: streaming }; events = events.then(() => { if (queuedStream === update) queuedStream = undefined; return controls.stream(update.text) }) }
+            }
+          }
           void events.catch(() => controller.abort())
         },
         tool: async (call: AiToolCall) => {

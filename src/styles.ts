@@ -224,51 +224,9 @@ const CSS = `
 .assistant-copy-btn:focus-visible { outline:2px solid var(--accent-color); outline-offset:1px; }
 .assistant-msg-meta .assistant-copy-btn > .assistant-copy-icon { width:12px; height:12px; flex:0 0 12px; }
 .assistant-msg-meta .assistant-msg-time { font-size:inherit; line-height:1; color:var(--text-secondary); user-select:none; }
-.assistant-wikilink, .assistant-bubble-md a.wikilink { color:var(--accent-color); text-decoration:none;
+.assistant-wikilink { color:var(--accent-color); text-decoration:none;
   cursor:pointer; font-weight:500; }
-.assistant-wikilink:hover, .assistant-bubble-md a.wikilink:hover { background:var(--accent-tint-bg); }
-/* Rendered Markdown inside a chat bubble: reset the bubble's pre-wrap, tighten the
- * shared .markdown-body rhythm so blocks sit snug in the small bubble. */
-.assistant-bubble-md { --text-color:var(--content-text); --title-color:var(--content-text); white-space:normal; -webkit-user-select:text; user-select:text; }
-.assistant-msg.mine .assistant-bubble-md { --text-color:var(--content-text); --title-color:var(--content-text); }
-.assistant-bubble-md > :first-child { margin-top:0; }
-.assistant-bubble-md > :last-child { margin-bottom:0; }
-.assistant-bubble-md p { margin:0 0 8px; }
-.assistant-bubble-md p:last-child { margin-bottom:0; }
-.assistant-bubble-md ul, .assistant-bubble-md ol { margin:4px 0; padding-left:20px; }
-.assistant-bubble-md ol { padding-left:2.2em; }
-.assistant-bubble-md li { margin:1px 0; }
-.assistant-bubble-md h1, .assistant-bubble-md h2, .assistant-bubble-md h3,
-.assistant-bubble-md h4, .assistant-bubble-md h5, .assistant-bubble-md h6 { margin:8px 0 4px; line-height:1.3; }
-.assistant-bubble-md pre { margin:6px 0; padding:8px 10px; border-radius:var(--radius-sm); overflow:auto;
-  background:var(--container-color-alt); border:1px solid var(--border-light); font:12px/1.5 var(--mono-font); }
-.assistant-bubble-md code { font:12px/1.5 var(--mono-font); }
-.assistant-bubble-md .code-block { margin:10px 0; min-width:0; border:1px solid var(--border-light); border-radius:var(--radius-sm); overflow:hidden; background:var(--container-color-alt); }
-.assistant-bubble-md .code-block-header { display:flex; align-items:center; justify-content:space-between; gap:8px; height:var(--app-bar-height,38px); box-sizing:border-box; padding:0 10px; border-bottom:1px solid var(--border-light); color:var(--text-secondary); font-size:var(--smaller-font-size); }
-.assistant-bubble-md .code-block-lang, .assistant-bubble-md .code-block-actions { display:inline-flex; align-items:center; gap:6px; }
-.assistant-bubble-md .code-block-icon, .assistant-bubble-md .code-block-icon svg { display:block; width:14px; height:14px; }
-.assistant-bubble-md .code-copy { display:flex; align-items:center; justify-content:center; width:26px; height:26px; padding:5px; border:0; border-radius:var(--radius-sm); background:transparent; color:var(--text-secondary); cursor:pointer; }
-.assistant-bubble-md .code-copy:hover { background:var(--hover-bg); color:var(--text-color); }
-.assistant-bubble-md .code-copy:focus-visible { outline:2px solid var(--accent-color); outline-offset:1px; }
-.assistant-bubble-md .code-copy svg { width:14px; height:14px; }
-.assistant-bubble-md .code-check-icon, .assistant-bubble-md .code-copy.copied .code-copy-icon { display:none; }
-.assistant-bubble-md .code-copy.copied .code-check-icon { display:block; }
-.assistant-bubble-md .code-block-scroll { overflow:auto; max-height:360px; }
-.assistant-bubble-md .code-block-content { display:flex; align-items:stretch; min-width:max-content; }
-.assistant-bubble-md .code-block-highlights { display:none; }
-.assistant-bubble-md .code-block-line-numbers { flex:none; white-space:pre; padding:10px 0 10px 10px; color:var(--text-secondary); text-align:right; user-select:none; font:12px/1.5 var(--mono-font); }
-.assistant-bubble-md .code-block pre { flex:1; border:0; border-radius:0; margin:0; padding:10px; overflow:visible; }
-
-.assistant-bubble-md :not(pre) > code { padding:1px 4px; border-radius:4px; background:var(--container-color-alt); }
-.assistant-bubble-md blockquote { margin:6px 0; padding:2px 0 2px 10px; border-left:3px solid var(--border-medium);
-  color:var(--text-secondary); }
-.assistant-bubble-md table { display:block; max-width:100%; overflow-x:auto; border-collapse:collapse; margin:6px 0; font-size:0.78125rem; }
-.assistant-bubble-md th, .assistant-bubble-md td { border:1px solid var(--border-light); padding:4px 8px; }
-.assistant-bubble-md a { color:var(--accent-color); }
-.assistant-msg.mine .assistant-bubble-md pre,
-.assistant-msg.mine .assistant-bubble-md :not(pre) > code {
-  background: color-mix(in srgb, var(--container-color) 60%, transparent);
-}
+.assistant-wikilink:hover { background:var(--accent-tint-bg); }
 /* Message prose renders in the host's embedded reading view, which only receives this class and these styles.
    It uses the note reading view's typography instead of the compact note-input scale; fenced code keeps its size. */
 .md-embedded.assistant-message-markdown :is(.md-note, .markdown-body) {

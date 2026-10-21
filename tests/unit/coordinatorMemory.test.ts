@@ -89,4 +89,40 @@ describe('session coordinator memory', () => {
       expect(retained()).toBeLessThanOrEqual(5 * largest)
     } finally { await coordinator.close() }
   }, 120000)
+
+  it('lets idle Telegram and WhatsApp conversations go back to their stored rows and reloads them for the next message', async () => {
+    const channelThread = (id: string, index: number) => ({ id, title: 'Fern', createdAt: 1, updatedAt: 1, source: index % 2 ? 'whatsapp' as const : 'telegram' as const, channelId: index % 2 ? 'whatsapp' : 'telegram', chatRef: `fern-${index}`, messages: Array.from({ length: 20 }, (_, message) => ({ id: `${id}-${message}`, role: 'user' as const, content: `${id} fern note ${message} `.padEnd(12000, 'frond ') })) })
+    const data = datasetFixture(), seen = new Map<string, Array<{ messages: number; sender?: string }>>()
+    const run = async (session: SessionSnapshot, _turn: unknown, controls: Parameters<CoordinatorPorts['run']>[2]) => {
+      seen.set(session.conversationId, [...(seen.get(session.conversationId) ?? []), { messages: session.thread!.messages.length, sender: session.thread!.channelSenderId }])
+      await controls.message({ id: `${session.conversationId}-reply-${session.thread!.messages.length}`, role: 'assistant', content: 'Fronds counted.' })
+    }
+    const coordinator = new SessionCoordinator(new AssistantRepository(data), { publish: () => {}, project: async () => {}, run })
+    const holding = (value: SessionCoordinator) => [...(value as unknown as { sessions: Map<string, SessionSnapshot> }).sessions.values()].filter(session => session.thread).map(session => session.conversationId)
+    try {
+      for (let index = 0; index < 20; index++) {
+        const id = `channel-${index}`, turn = crypto.randomUUID()
+        await coordinator.enqueue({ id: turn, conversationId: id, text: 'Count fronds', thread: channelThread(id, index), channelActor: { senderId: `sender-${index}` } })
+        expect((await coordinator.waitForTurn(id, turn)).thread?.messages).toHaveLength(21)
+      }
+      expect(holding(coordinator)).toEqual(['channel-16', 'channel-17', 'channel-18', 'channel-19'])
+      expect(coordinator.snapshot('channel-0')).toMatchObject({ state: 'IDLE', queue: [], paused: false })
+      expect(coordinator.snapshot('channel-0')!.thread).toBeUndefined()
+
+      const next = crypto.randomUUID()
+      await coordinator.enqueue({ id: next, conversationId: 'channel-0', text: 'Count again', channelActor: { senderId: 'sender-new', topicId: 'canopy' } })
+      const finished = await coordinator.waitForTurn('channel-0', next)
+      expect(seen.get('channel-0')).toEqual([{ messages: 20, sender: 'sender-0' }, { messages: 21, sender: 'sender-new' }])
+      expect(finished.thread).toMatchObject({ source: 'telegram', chatRef: 'fern-0', channelSenderId: 'sender-new', channelTopicId: 'canopy' })
+      expect(finished.thread!.messages).toHaveLength(22)
+      expect(holding(coordinator)).toHaveLength(4)
+    } finally { await coordinator.close() }
+
+    const restored = new SessionCoordinator(new AssistantRepository(data), { publish: () => {}, project: async () => {}, run })
+    try {
+      await restored.restore()
+      expect(holding(restored)).toEqual([])
+      expect((await restored.load('channel-5'))?.thread?.messages).toHaveLength(21)
+    } finally { await restored.close() }
+  }, 120000)
 })

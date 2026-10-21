@@ -37,7 +37,7 @@ export function register(api: PluginBackendApi): () => Promise<void> {
   channelManager.bindRuntime({ repository: runtime.repository, onInbound: (id, message) => runtime.inbound(id, { ...message, channelId: id, ts: message.receivedAt ?? Date.now() }).then(() => {}), onLifecycle: async (id, event) => { if (event.type === 'receipt' && event.state) await runtime.channels.deliveries.providerReceipt(id, event.providerMessageId, event.state, event.error) }, onAction: async (_id, action, actor) => { if (action.kind === 'plan.approve') await runtime.approve(action.conversationId, action, `${actor.channelId}:${actor.chatRef}:${actor.senderId}`); else {
     await runtime.coordinator.change(action.conversationId, async thread => { if (thread.plan?.id !== action.planId || thread.plan.revision !== action.revision) throw new Error('Plan changed'); thread.plan.status = 'changes'; thread.mode = 'plan'; return {} })
     // Same as the in-app "Change" button: confirm the tap and ask what to change, instead of going silent.
-    const thread = runtime.coordinator.snapshot(action.conversationId)?.thread
+    const thread = (await runtime.coordinator.load(action.conversationId))?.thread
     if (thread?.source && thread.channelId && thread.chatRef) await runtime.channels.send({ id: `plan-refine:${action.planId}:${action.revision}`, conversationId: thread.id, destination: { kind: thread.source, conversationId: thread.id, channelId: thread.channelId, chatRef: thread.chatRef, topicId: thread.channelTopicId, chatType: thread.channelChatType }, content: { type: 'text', text: 'Okay, the plan stays open. Tell me what to change.' } })
   } } })
   const offAi = api.ai.onStream(event => relayAiStream(api, event))
