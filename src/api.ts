@@ -3,7 +3,7 @@ import type { HarnessEvent } from './harnessTypes'
 import type { ValleyPluginApi as HostApi } from '@valley/plugin-sdk'
 import type { DriverResult } from '@valley/plugin-sdk/types'
 import type { ChannelsInfo, AiStreamEvent, ChannelMessage } from './types'
-import type { AiDriver, ChannelDriver, AiBalanceResult, AiChatListResult, AiChatStartResult, AiChatThreadResult, AiCommandsResult, AiConfigResult, AiConnectionsResult, AiGuardOverridesResult, AiGuardResult, AiHarnessPackageResult, AiHarnessRunResult, AiHarnessRunsResult, AiHarnessesResult, AiMemoryResult, AiModelsResult, AiOllamaStatusResult, AiPendingResult, AiPersonalitiesResult, AiPersonalityResult, AiProvidersResult, AiUsageResult, ChannelsResult } from './apiTypes'
+import type { AiDriver, ChannelDriver, AiBalanceResult, AiChatListResult, AiChatSaveResult, AiChatStartResult, AiChatThreadResult, AiCommandsResult, AiConfigResult, AiConnectionsResult, AiGuardOverridesResult, AiGuardResult, AiHarnessPackageResult, AiHarnessRunResult, AiHarnessRunsResult, AiHarnessesResult, AiMemoryResult, AiModelsResult, AiOllamaStatusResult, AiPendingResult, AiPersonalitiesResult, AiPersonalityResult, AiProvidersResult, AiUsageResult, ChannelsResult } from './apiTypes'
 export type ValleyPluginApi = HostApi & { assistant: AiDriver; channels: ChannelDriver }
 const configurations = new WeakMap<object, { ready(): Promise<void>; dispose(): void }>()
 export function assistantConfigurationReady(api: ValleyPluginApi): Promise<void> { return configurations.get(api)?.ready() ?? Promise.resolve() }
@@ -59,7 +59,7 @@ export function createAssistantApi(api: HostApi): ValleyPluginApi {
         listPending: () => driverCall('ai', 'listPending', {}) as Promise<AiPendingResult>,
         listChats: (cursor) => driverCall('ai', 'listChats', cursor ? { cursor } : {}) as Promise<AiChatListResult>,
         readChat: (id) => driverCall('ai', 'readChat', { id }) as Promise<AiChatThreadResult>,
-        saveChat: (thread) => driverCall('ai', 'saveChat', { thread }),
+        saveChat: (thread) => driverCall('ai', 'saveChat', { thread }) as Promise<AiChatSaveResult>,
         renameChat: (id, title) => driverCall('ai', 'renameChat', { id, title }),
         deleteChat: (id) => driverCall('ai', 'deleteChat', { id }),
         clearChat: (id) => driverCall('ai', 'clearChat', { id }),

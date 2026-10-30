@@ -183,6 +183,8 @@ class AssistantStore {
   private drafts = new Map<string, { text: string; attachments: InboundAttachment[] }>()
   private pendingWork = new Set<Promise<void>>()
   private pendingSaves = new Set<Promise<void>>()
+  private threadSaves = new Map<string, Promise<void>>()
+  private saveErrors = new Map<string, string>()
   private dirtyThreads = new Map<string, AiChatThread>()
   private failedThreads = new Set<string>()
   private preparing = false
@@ -443,19 +445,38 @@ class AssistantStore {
     const snapshot = structuredClone(thread)
     this.dirtyThreads.set(thread.id, snapshot)
     this.failedThreads.delete(thread.id)
+    const previous = this.threadSaves.get(thread.id)
     const saving = (async () => {
+      if (previous) {
+        await previous.catch(() => undefined)
+        const live = this.state.active?.id === thread.id ? this.state.active : thread
+        if (live.configurationRevision !== undefined) Object.assign(snapshot, { configurationRevision: live.configurationRevision, configurationHash: live.configurationHash, instructionsPath: live.instructionsPath })
+      }
       try {
         const result = await this.api.assistant.saveChat(snapshot)
         if (!result.ok) throw new Error(result.error || 'Assistant chat save failed')
+        if (result.data?.configurationRevision !== undefined) {
+          const saved = { configurationRevision: result.data.configurationRevision, configurationHash: result.data.configurationHash, instructionsPath: result.data.instructionsPath }
+          Object.assign(thread, saved)
+          if (this.state.active?.id === thread.id && this.state.active !== thread) Object.assign(this.state.active, saved)
+          if (this.state.active?.id === thread.id) this.notify()
+        }
         if (this.dirtyThreads.get(thread.id) === snapshot) this.dirtyThreads.delete(thread.id)
+        const failed = this.saveErrors.get(thread.id)
+        this.saveErrors.delete(thread.id)
+        if (failed !== undefined && this.conversationErrors.get(thread.id) === failed) { this.conversationErrors.delete(thread.id); this.notify() }
       } catch (error) {
         if (this.dirtyThreads.get(thread.id) === snapshot) this.failedThreads.add(thread.id)
-        this.conversationErrors.set(thread.id, error instanceof Error ? error.message : String(error))
+        const message = error instanceof Error ? error.message : String(error)
+        this.saveErrors.set(thread.id, message)
+        this.conversationErrors.set(thread.id, message)
         throw error
       }
     })()
     this.pendingSaves.add(saving)
-    void saving.then(() => this.pendingSaves.delete(saving), () => this.pendingSaves.delete(saving))
+    this.threadSaves.set(thread.id, saving)
+    const settle = (): void => { this.pendingSaves.delete(saving); if (this.threadSaves.get(thread.id) === saving) this.threadSaves.delete(thread.id) }
+    void saving.then(settle, settle)
     return saving
   }
 

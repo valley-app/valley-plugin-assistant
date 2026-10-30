@@ -51,6 +51,9 @@ export interface AiChatListResult extends DriverResult {
 export interface AiChatThreadResult extends DriverResult {
   data?: { thread: AiChatThread }
 }
+export interface AiChatSaveResult extends DriverResult {
+  data?: Pick<AiChatThread, 'configurationRevision' | 'configurationHash' | 'instructionsPath'>
+}
 
 /** `DriverResult` whose `data` carries the assistant's personalities (profiles). */
 export interface AiPersonalitiesResult extends DriverResult {
@@ -148,7 +151,7 @@ export interface AiDriver {
   /** Read one full conversation thread. */
   readChat(id: string): Promise<AiChatThreadResult>
   /** Create/overwrite a conversation thread. */
-  saveChat(thread: AiChatThread): Promise<DriverResult>
+  saveChat(thread: AiChatThread): Promise<AiChatSaveResult>
   /** Rename a conversation thread. */
   renameChat(id: string, title: string): Promise<DriverResult>
   /** Delete a conversation thread folder. */

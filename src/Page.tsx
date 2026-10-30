@@ -355,9 +355,19 @@ function ComposerPopover({ anchor, label, role = 'dialog', onClose, children }: 
   onClose(): void
   children: ReactNode
 }): React.ReactElement {
+  const popover = React.useRef<HTMLDivElement>(null)
+  React.useLayoutEffect(() => {
+    const element = popover.current
+    const Observer = element?.ownerDocument.defaultView?.ResizeObserver
+    if (!element || !Observer) return
+    // Host widgets cut their occlusion holes from the popover's box; re-announce it whenever its size changes.
+    const observer = new Observer(() => element.setAttribute('data-plugin-widget-occluder', ''))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   return <>
     <div className="assistant-popover-dismiss" onPointerDown={onClose} />
-    <div className="assistant-composer-popover" data-plugin-widget-occluder="" role={role} aria-label={label} onKeyDown={event => {
+    <div ref={popover} className="assistant-composer-popover" data-plugin-widget-occluder="" role={role} aria-label={label} onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); anchor.focus() }
     }}>{children}</div>
   </>
@@ -741,7 +751,7 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
         <button className="assistant-btn assistant-btn-ghost" onClick={() => { void store.changePlan(snap.active!.plan!.id).then(() => inputRef.current?.focus()).catch(error => setAttachmentError(String(error))) }}>{uiText('assistant.plan.change')}</button>
         <button className="assistant-btn" onClick={() => { void store.implementPlan(snap.active!.plan!.id).catch(error => setAttachmentError(String(error))) }}>{uiText('assistant.plan.implement')}</button>
       </div>}
-      {awayFromBottom && <button type="button" className="assistant-jump-latest" title={uiText('assistant.scroll.latest')} aria-label={uiText('assistant.scroll.latest')} onClick={jumpToLatest}><ArrowDown /></button>}
+      {awayFromBottom && <button type="button" className="assistant-jump-latest" data-plugin-widget-occluder="" title={uiText('assistant.scroll.latest')} aria-label={uiText('assistant.scroll.latest')} onClick={jumpToLatest}><ArrowDown /></button>}
       {readOnly ? (
         <div className="assistant-channel-banner" role="status">
           <RemoteIcon className={remoteIconClass} />
@@ -831,7 +841,7 @@ export const ChatView: FC<{ navigation?: MainWorkspaceViewProps['navigation']; s
                     if (value === 'auto') store.setModelOverride(null)
                     else { const selected = parseModelValue(value, connections); if (selected) store.setModelOverride(selected) }
                     setModelListOpen(false)
-                  }} /><button className="assistant-btn assistant-btn-ghost" onClick={() => { setModelAnchor(null); api.workspace.openSettings('ai-providers') }}>{uiText('assistant.composer.connectionSettings')}</button></div>}
+                  }} /></div>}
                 </ComposerPopover>}
               </div>
             </div>

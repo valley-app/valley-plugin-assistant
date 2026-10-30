@@ -338,7 +338,9 @@ export async function rebuildChatSearch(vaultRoot: string, api: OwnerApi = backe
   for (const id of existing.keys()) if (typeof id === 'string') await dataset.delete({ id })
 }
 
-export async function saveChat(vaultRoot: string, thread: AiChatThread, api: OwnerApi = backendApi()): Promise<void> {
+export type SavedChatConfiguration = Pick<AiChatThread, 'configurationRevision' | 'configurationHash' | 'instructionsPath'>
+
+export async function saveChat(vaultRoot: string, thread: AiChatThread, api: OwnerApi = backendApi()): Promise<SavedChatConfiguration> {
   if (!isSafeName(thread.id)) throw new Error(t('assistant.backend.invalidChat', { value: thread.id }))
   return runExclusive(`chat:${thread.id}`, async () => {
   await assertChatWritable(thread.id, api)
@@ -369,6 +371,7 @@ export async function saveChat(vaultRoot: string, thread: AiChatThread, api: Own
     return null
   }, api)
   await updateChatSearch(() => appended ? indexChatAppend(thread, appended.existing, appended.delta, api) : indexChat(thread, api), api)
+  return { configurationRevision: thread.configurationRevision, configurationHash: thread.configurationHash, instructionsPath: thread.instructionsPath }
   }, api)
 }
 

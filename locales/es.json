@@ -644,7 +644,6 @@
   "assistant.channel.notConfigured": "Sin conexión",
   "assistant.channel.settings": "Ajustes de conexión",
   "assistant.composer.modelUnavailable": "No disponible",
-  "assistant.composer.connectionSettings": "Conexiones de IA",
   "assistant.permissions.vault": "Solo bóveda",
   "assistant.permissions.full": "Acceso completo",
   "assistant.permissions.vaultDescription": "Los archivos y comandos de terminal se limitan a esta bóveda.",

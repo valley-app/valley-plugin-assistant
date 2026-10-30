@@ -644,7 +644,6 @@
   "assistant.channel.notConfigured": "Nicht verbunden",
   "assistant.channel.settings": "Verbindungseinstellungen",
   "assistant.composer.modelUnavailable": "Nicht verfügbar",
-  "assistant.composer.connectionSettings": "KI-Verbindungen",
   "assistant.permissions.vault": "Nur Vault",
   "assistant.permissions.full": "Vollzugriff",
   "assistant.permissions.vaultDescription": "Dateien und Terminalbefehle bleiben innerhalb dieses Vaults.",

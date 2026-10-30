@@ -189,10 +189,12 @@ const CSS = `
 .assistant-composer-dock > .assistant-voice-entry { padding:0 clamp(16px,4cqi,48px) 6px; }
 .assistant-composer-dock > .assistant-voice-panel { margin:8px clamp(16px,4cqi,48px); }
 .assistant-composer-dock::before { content:''; position:absolute; pointer-events:none; height:40px; left:0; right:0; bottom:100%; background:linear-gradient(to bottom,transparent,var(--surface-color-alt)); }
-.assistant-jump-latest { position:absolute; z-index:1; top:-48px; left:50%; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; border:1px solid var(--border-medium); border-radius:50%; background:var(--container-color); color:var(--title-color); box-shadow:0 2px 10px #0002; cursor:pointer; }
-.assistant-jump-latest svg { width:20px; height:20px; }
-.assistant-jump-latest:hover { background:var(--surface-raised); }
+.assistant-jump-latest { position:absolute; z-index:1; top:-46px; left:50%; transform:translateX(-50%); display:flex; align-items:center; justify-content:center; width:30px; height:30px; padding:0; border:1px solid var(--menu-glass-border); border-radius:50%; background:var(--menu-bg); color:var(--title-color); box-shadow:var(--menu-glass-shadow); cursor:pointer; transition:background-color .12s ease, transform .12s ease; }
+.assistant-jump-latest svg { width:16px; height:16px; stroke-width:2.2; }
+.assistant-jump-latest:hover { background:linear-gradient(var(--hover-bg-strong),var(--hover-bg-strong)),var(--menu-bg); }
+.assistant-jump-latest:active { transform:translateX(-50%) scale(.94); }
 .assistant-jump-latest:focus-visible { outline:2px solid var(--accent-color); outline-offset:2px; }
+@media (prefers-reduced-motion: reduce) { .assistant-jump-latest { transition:none; } .assistant-jump-latest:active { transform:translateX(-50%); } }
 .assistant-drop-overlay { position:absolute; inset:0; z-index:5; display:grid; place-items:center; pointer-events:none; background:color-mix(in srgb,var(--accent-color) 26%,transparent); }
 .assistant-drop-overlay > span { padding:8px 14px; border-radius:var(--radius-lg); background:var(--accent-color); color:var(--accent-button-text); box-shadow:0 4px 20px #0003; font-size:var(--font-size); }
 /* No centered reading column: assistant text + tool blocks always start at the
