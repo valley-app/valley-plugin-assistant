@@ -644,7 +644,6 @@
   "assistant.channel.notConfigured": "未连接",
   "assistant.channel.settings": "连接设置",
   "assistant.composer.modelUnavailable": "不可用",
-  "assistant.composer.connectionSettings": "AI 连接",
   "assistant.permissions.vault": "仅限知识库",
   "assistant.permissions.full": "完全访问",
   "assistant.permissions.vaultDescription": "文件和终端命令仅限于此知识库。",

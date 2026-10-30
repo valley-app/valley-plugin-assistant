@@ -644,7 +644,6 @@
   "assistant.channel.notConfigured": "Not connected",
   "assistant.channel.settings": "Connection settings",
   "assistant.composer.modelUnavailable": "Unavailable",
-  "assistant.composer.connectionSettings": "AI connections",
   "assistant.permissions.vault": "Vault only",
   "assistant.permissions.full": "Full access",
   "assistant.permissions.vaultDescription": "Files and terminal commands stay inside this vault.",

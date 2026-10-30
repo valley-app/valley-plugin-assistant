@@ -644,7 +644,6 @@
   "assistant.channel.notConfigured": "Non connecté",
   "assistant.channel.settings": "Paramètres de connexion",
   "assistant.composer.modelUnavailable": "Indisponible",
-  "assistant.composer.connectionSettings": "Connexions IA",
   "assistant.permissions.vault": "Coffre uniquement",
   "assistant.permissions.full": "Accès complet",
   "assistant.permissions.vaultDescription": "Les fichiers et commandes du terminal restent dans ce coffre.",
